@@ -87,6 +87,14 @@ def metrics_html(c: dict) -> str:
     tr_txt = (f"200일선 {tsl:+.1f}%") if tsl is not None else "—"
     tr_cls = _sig(bool(tsl is not None and tsl > 0), bool(tsl is not None and tsl < 0))
 
+    wk = m.get("weekly_uptrend")
+    wk_txt = "양호 (상승)" if wk else ("역행 (주의)" if wk is not None else "—")
+    wk_cls = _sig(wk is True, wk is False)
+
+    conf = m.get("confluence") or []
+    conf_txt = (" · ".join(conf) + " 겹침") if conf else "없음"
+    conf_cls = _sig(bool(conf), False)
+
     return f"""
       <div class="panel">
         <div class="panel-h">정밀 분석</div>
@@ -95,7 +103,9 @@ def metrics_html(c: dict) -> str:
         <div class="mrow"><span>RSI(14)</span><b class="{rsi_cls}">{rsi_txt}</b></div>
         <div class="mrow"><span>눌림 거래량</span><b class="{vol_cls}">{vol_txt}</b></div>
         <div class="mrow"><span>상대강도(60일)</span><b class="{rs_cls}">{rs_txt}</b></div>
-        <div class="mrow"><span>추세</span><b class="{tr_cls}">{tr_txt}</b></div>
+        <div class="mrow"><span>추세(일봉)</span><b class="{tr_cls}">{tr_txt}</b></div>
+        <div class="mrow"><span>주봉 추세(다중TF)</span><b class="{wk_cls}">{wk_txt}</b></div>
+        <div class="mrow"><span>지지 겹침</span><b class="{conf_cls}">{conf_txt}</b></div>
         <div class="mrow"><span>포지션 사이징</span><b class="size-out">—</b></div>
       </div>"""
 
@@ -133,21 +143,36 @@ def card_html(market: str, c: dict) -> str:
     </a>"""
 
 
-def watch_html(watch: list) -> str:
-    if not watch:
+def stage_list_html(title: str, items: list) -> str:
+    if not items:
         return ""
-    chips = "".join(f"<span class='chip'>{s.display_name(w['ticker'])}</span>" for w in watch)
-    return f"""
-    <div class="watch">
-      <div class="watch-h">관찰 대상 <span class="muted">골든크로스 발생 · 눌림 대기 {len(watch)}</span></div>
-      <div class="chips">{chips}</div>
-    </div>"""
+    items = sorted(items, key=lambda r: r.get("days_since_cross", 999))
+    rows = ""
+    for r in items:
+        t = r["ticker"]
+        name = s.display_name(t)
+        fp = s.fmt_price(r["price"], t)
+        rn = (r.get("r_now") or 0) * 100
+        wk = r.get("weekly_uptrend")
+        wk_txt = "주봉↑" if wk else ("주봉↓" if wk is not None else "")
+        wk_cls = "sig-good" if wk else ("sig-bad" if wk is not None else "")
+        rows += (
+            f"<a class='wl-row' href='{chart_url(t)}' target='_blank' rel='noopener'>"
+            f"<span class='wl-nm'>{name}</span>"
+            f"<span class='wl-meta'>크로스 +{r.get('days_since_cross', '?')}일 · 되돌림 {rn:.0f}%</span>"
+            f"<span class='wl-wk {wk_cls}'>{wk_txt}</span>"
+            f"<span class='wl-px'>{fp}</span></a>")
+    return (f"<div class='watch'><div class='watch-h'>{title} "
+            f"<span class='muted'>{len(items)}</span></div>"
+            f"<div class='wl'>{rows}</div></div>")
 
 
 def section_html(market: str, results: list) -> str:
     charted = [r for r in results if r.get("img")]
     charted.sort(key=lambda r: r["setup"]["r_now"])
-    watch = [r for r in results if r["tier"] == "watch"]
+    fresh = [r for r in results if r.get("stage") == "fresh"]
+    wait = [r for r in results if r.get("stage") == "wait"]
+    watch_n = len(fresh) + len(wait)
     mid = market                       # us / kr / crypto
     active = "active" if market == "us" else ""
 
@@ -156,7 +181,7 @@ def section_html(market: str, results: list) -> str:
         body = f"<div class='grid'>{cards}</div>"
     else:
         body = ("<div class='empty'>오늘 분할매수 구간(0.382~0.618)에 들어온 종목이 없습니다. "
-                "관찰 대상만 확인하세요.</div>")
+                "아래 크로스 단계에서 눌림 대기 중인 종목을 확인하세요.</div>")
 
     cur = {"us": "USD", "kr": "KRW", "crypto": "USD"}.get(market, "USD")
     acct_default = {"us": "10000", "kr": "10000000", "crypto": "10000"}.get(market, "10000")
@@ -169,12 +194,13 @@ def section_html(market: str, results: list) -> str:
     <section id="sec-{mid}" class="market {active}">
       <div class="sec-meta">
         <span class="cnt"><b>{len(charted)}</b> 매수구간</span>
-        <span class="cnt"><b>{len(watch)}</b> 관찰</span>
+        <span class="cnt"><b>{watch_n}</b> 크로스 관찰</span>
         <span class="cnt"><b>{len(results)}</b> 신호 종목</span>
       </div>
       {sizer if charted else ''}
       {body}
-      {watch_html(watch)}
+      {stage_list_html("🟡 갓 골든크로스 · 눌림 대기", fresh)}
+      {stage_list_html("🔵 상승 중 · 아직 안 눌림", wait)}
     </section>"""
 
 
@@ -285,6 +311,16 @@ a.card-link:hover .open{color:var(--gold)}
 .chips{display:flex;flex-wrap:wrap;gap:7px}
 .chip{font-size:12.5px;color:var(--tx);background:var(--panel);
   border:1px solid var(--line);padding:5px 11px;border-radius:999px}
+.wl{display:flex;flex-direction:column;gap:6px}
+.wl-row{display:grid;grid-template-columns:1fr auto auto auto;align-items:center;gap:12px;
+  text-decoration:none;color:var(--tx);background:var(--panel);border:1px solid var(--line);
+  border-radius:8px;padding:9px 13px;font-size:12.5px;transition:border-color .15s}
+.wl-row:hover{border-color:var(--gold)}
+.wl-nm{font-weight:600}
+.wl-meta{color:var(--mut);font-family:"IBM Plex Mono",monospace;font-size:11.5px}
+.wl-wk{font-family:"IBM Plex Mono",monospace;font-size:11.5px;min-width:38px;text-align:right}
+.wl-px{font-family:"IBM Plex Mono",monospace;font-weight:600;min-width:74px;text-align:right}
+@media(max-width:560px){.wl-row{grid-template-columns:1fr auto;row-gap:4px}.wl-meta{grid-column:1/3}}
 .empty{padding:34px 20px;text-align:center;color:var(--mut);font-size:14px;
   background:var(--panel);border:1px dashed var(--line);border-radius:12px}
 

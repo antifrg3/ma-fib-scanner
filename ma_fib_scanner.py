@@ -131,6 +131,7 @@ class Config:
 
     # --- 골든크로스 신선도: 최근 N 거래일 이내 발생한 크로스만 유효 ---
     gc_lookback_days: int = 120
+    fresh_days: int = 20           # 크로스 후 N일 이내 = '갓 크로스' 단계
 
     # --- 피보나치 앵커 ---
     pre_cross_lookback: int = 60   # 크로스 이전 저점 탐색 구간(거래일)
@@ -404,9 +405,30 @@ def compute_metrics(df: pd.DataFrame, setup: dict, bench_ret: float | None = Non
     stock_ret = float((c.iloc[-1] / c.iloc[-61] - 1) * 100) if len(c) > 61 else None
     rs60 = (stock_ret - bench_ret) if (stock_ret is not None and bench_ret is not None) else None
 
+    # 다중 타임프레임: 주봉 추세 (주봉 종가 > 30주선 & 30주선 상승)
+    weekly_up = None
+    try:
+        wk = df["Close"].resample("W").last().dropna()
+        wma = wk.rolling(30).mean()
+        if wma.notna().sum() > 5:
+            weekly_up = bool(wk.iloc[-1] > wma.iloc[-1] and wma.iloc[-1] > wma.iloc[-5])
+    except Exception:
+        weekly_up = None
+
+    # MA 컨플루언스: 50/100일선이 매수구간(0.382~0.618 가격대) 안에 있나
+    conf = []
+    zone_hi = setup["high"] - 0.382 * setup["range"]
+    zone_lo = setup["high"] - 0.618 * setup["range"]
+    for n in (50, 100):
+        if len(c) >= n:
+            ma_n = float(c.rolling(n).mean().iloc[-1])
+            if zone_lo <= ma_n <= zone_hi:
+                conf.append(f"{n}일선")
+
     return {"r_mult": r_mult, "risk_pct": risk_pct, "atr": atr, "atr_stop": atr_stop,
             "rsi": rsi_v, "vol_ratio": vol_ratio, "trend_slope": trend_slope,
-            "stock_ret60": stock_ret, "rs60": rs60}
+            "stock_ret60": stock_ret, "rs60": rs60,
+            "weekly_uptrend": weekly_up, "confluence": conf}
 
 
 def bench_return(market: str, cfg: "Config") -> float | None:
@@ -495,19 +517,35 @@ def scan_one(ticker: str, cfg: Config, bench_ret: float | None = None) -> dict |
         return None
 
     label, tier = classify(setup["r_now"], cfg)
-    # 차트+상세 리포트 대상: 되돌림이 설정 구간 안(approach/in_zone/deep 초입)
-    if not (cfg.zone_min <= setup["r_now"] <= cfg.zone_max):
-        # 골든크로스는 있으나 아직 눌림 전 → 관찰 대상으로만 보고
-        if tier == "no_pullback":
-            return {"ticker": ticker, "tier": "watch", "label": label,
-                    "price": setup["price"], "df": None, "setup": setup}
-        return None
+    r_now = setup["r_now"]
+    days_since = int((df.index[-1] - setup["cross_date"]).days)
 
-    img = render_chart(ticker, df, setup, label, cfg)
-    metrics = compute_metrics(df, setup, bench_ret)
-    return {"ticker": ticker, "tier": tier, "label": label,
-            "price": setup["price"], "df": df, "setup": setup, "img": img,
-            "metrics": metrics}
+    # 매수구간(눌림목) → 풀 카드 (차트 + 정밀 분석)
+    if cfg.zone_min <= r_now <= cfg.zone_max:
+        img = render_chart(ticker, df, setup, label, cfg)
+        metrics = compute_metrics(df, setup, bench_ret)
+        return {"ticker": ticker, "tier": tier, "stage": "buy", "label": label,
+                "price": setup["price"], "df": df, "setup": setup, "img": img,
+                "metrics": metrics, "days_since_cross": days_since}
+
+    # 아직 눌림 전(상승 중) → 생애주기 관찰 단계 (갓 크로스 / 상승 대기)
+    if r_now < cfg.zone_min:
+        weekly_up = None
+        try:
+            wk = df["Close"].resample("W").last().dropna()
+            wma = wk.rolling(30).mean()
+            if wma.notna().sum() > 5:
+                weekly_up = bool(wk.iloc[-1] > wma.iloc[-1] and wma.iloc[-1] > wma.iloc[-5])
+        except Exception:
+            weekly_up = None
+        stage = "fresh" if days_since <= cfg.fresh_days else "wait"
+        return {"ticker": ticker, "tier": "watch", "stage": stage, "label": label,
+                "price": setup["price"], "df": None, "setup": setup,
+                "r_now": r_now, "days_since_cross": days_since,
+                "weekly_uptrend": weekly_up}
+
+    # 되돌림이 너무 깊음(>zone_max) → 제외
+    return None
 
 
 def scan_all(cfg: Config) -> list[dict]:
