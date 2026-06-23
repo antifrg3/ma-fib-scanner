@@ -34,8 +34,10 @@ jobs:
       - name: Install deps
         run: pip install -r requirements.txt pykrx
 
-      - name: Refresh universe (코스피200 + 나스닥100 최신화)
+      - name: Refresh universe (나스닥100 · 코스피200 · 크립토 거래대금 상위)
         run: python build_universe.py
+        env:
+          CRYPTO_TOP_N: "50"        # 크립토 스캔 개수 (바꾸려면 이 숫자만 수정)
         continue-on-error: true   # 실패해도 기존 종목 파일로 진행
 
       - name: Build dashboard
