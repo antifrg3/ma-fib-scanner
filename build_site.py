@@ -183,8 +183,8 @@ def section_html(market: str, results: list) -> str:
         body = ("<div class='empty'>오늘 분할매수 구간(0.382~0.618)에 들어온 종목이 없습니다. "
                 "아래 크로스 단계에서 눌림 대기 중인 종목을 확인하세요.</div>")
 
-    cur = {"us": "USD", "kr": "KRW", "crypto": "USD"}.get(market, "USD")
-    acct_default = {"us": "10000", "kr": "10000000", "crypto": "10000"}.get(market, "10000")
+    cur = {"us": "USD", "kr": "KRW", "etf": "USD", "crypto": "USD"}.get(market, "USD")
+    acct_default = {"us": "10000", "kr": "10000000", "etf": "10000", "crypto": "10000"}.get(market, "10000")
     sizer = (f"<div class='sizer'>포지션 사이징 계산 — 계좌 "
              f"<input type='number' class='acct' value='{acct_default}'> · 리스크 "
              f"<input type='number' class='risk' value='1' step='0.1'>% "
@@ -338,7 +338,8 @@ a.card-link:hover .open{color:var(--gold)}
 
 JS = r"""
 const tabs=[...document.querySelectorAll('.tab')];
-const secs={us:document.getElementById('sec-us'),kr:document.getElementById('sec-kr'),crypto:document.getElementById('sec-crypto')};
+const secs={};
+document.querySelectorAll('.market').forEach(el=>{ secs[el.id.replace('sec-','')]=el; });
 function sel(m){tabs.forEach(t=>t.setAttribute('aria-selected', t.dataset.m===m));
   Object.entries(secs).forEach(([k,el])=>el&&el.classList.toggle('active',k===m));
   try{localStorage.setItem('mkt',m)}catch(e){}}
@@ -373,7 +374,15 @@ Object.values(secs).forEach(sizeAll);
 """
 
 
+MARKETS = [("us", "🇺🇸 미국"), ("etf", "📊 ETF"), ("kr", "🇰🇷 한국"), ("crypto", "🪙 크립토")]
+
+
 def page_html(stamp: str, sections: dict, meta: dict) -> str:
+    tabs = "".join(
+        f'<button class="tab" role="tab" data-m="{mid}">{label} '
+        f'<span class="mono">{meta.get(mid + "_n", 0)}</span></button>'
+        for mid, label in MARKETS)
+    secs = "".join(sections.get(mid, "") for mid, _ in MARKETS)
     return f"""<!doctype html>
 <html lang="ko"><head>
 <meta charset="utf-8">
@@ -393,14 +402,10 @@ def page_html(stamp: str, sections: dict, meta: dict) -> str:
   </div>
 
   <div class="tabs" role="tablist">
-    <button class="tab" role="tab" data-m="us">🇺🇸 미국 <span class="mono">{meta['us_n']}</span></button>
-    <button class="tab" role="tab" data-m="kr">🇰🇷 한국 <span class="mono">{meta['kr_n']}</span></button>
-    <button class="tab" role="tab" data-m="crypto">🪙 크립토 <span class="mono">{meta['crypto_n']}</span></button>
+    {tabs}
   </div>
 
-  {sections['us']}
-  {sections['kr']}
-  {sections['crypto']}
+  {secs}
 
   <div class="how">
     <b>어떻게 고르나</b> · ① 4시간봉 200선이 일봉 200선을 상향 돌파(골든크로스, 최근 120거래일 내)
@@ -408,7 +413,7 @@ def page_html(stamp: str, sections: dict, meta: dict) -> str:
     게이지의 금색 구간이 분할매수 구간, 점은 현재 위치. 차트의 파란선=일봉200, 주황선=4시간봉200.
   </div>
   <div class="foot">
-    스캔 대상: 나스닥100 · 코스피200 · 크립토(바이낸스 시총 상위) · 데이터 Yahoo Finance/Binance · 매일 자동 갱신.<br>
+    스캔 대상: 나스닥100 · 미국 ETF · 코스피200 · 크립토(바이낸스 시총 상위) · 데이터 Yahoo Finance/Binance · 매일 자동 갱신.<br>
     본 페이지는 조건 충족 종목을 찾아주는 스크리너이며 투자 조언이 아닙니다.
     진입·손절·익절 판단은 본인 책임입니다. 크립토는 변동성이 커 ATR 손절·작은 비중을 권장하며,
     4시간봉 값은 TradingView와 다를 수 있어 최종 확인을 권장합니다.
@@ -426,7 +431,7 @@ def main():
 
     sections = {}
     meta = {}
-    for market in ["us", "kr", "crypto"]:
+    for market, _label in MARKETS:
         cfg = s.Config()
         cfg.market = market
         print(f"=== 스캔: {market} ===")
@@ -444,7 +449,8 @@ def main():
     html = page_html(stamp, sections, meta)
     with open(os.path.join(SITE, "index.html"), "w", encoding="utf-8") as f:
         f.write(html)
-    print(f"✅ {SITE}/index.html (미국 {meta['us_n']} · 한국 {meta['kr_n']} · 크립토 {meta['crypto_n']})")
+    print(f"✅ {SITE}/index.html (미국 {meta['us_n']} · ETF {meta['etf_n']} · "
+          f"한국 {meta['kr_n']} · 크립토 {meta['crypto_n']})")
 
 
 if __name__ == "__main__":

@@ -87,6 +87,17 @@ CRYPTO_UNIVERSE = [
     "ETCUSDT", "XLMUSDT", "HBARUSDT", "AAVEUSDT",
 ]
 
+# ETF (yfinance, 미국 상장). 유동성 큰 메이저 위주 — 브로드/섹터/테마/지역/원자재.
+ETF_UNIVERSE = [
+    "SPY", "QQQ", "IWM", "DIA", "VTI",                          # 브로드
+    "XLK", "XLF", "XLE", "XLV", "XLY", "XLP", "XLI", "XLU",      # 섹터(SPDR)
+    "XLB", "XLRE", "XLC",
+    "SMH", "SOXX", "IGV", "XBI", "ARKK", "TAN", "ICLN",         # 테마/산업
+    "GDX", "XRT", "KRE", "XHB", "JETS",
+    "EEM", "FXI", "EWY", "EWJ", "INDA",                          # 지역
+    "GLD", "SLV", "TLT", "HYG",                                  # 원자재/채권
+]
+
 
 def normalize_ticker(t: str) -> str:
     """6자리 숫자만 입력하면 코스피(.KS)로 간주. 코스닥은 직접 .KQ 붙여야 함."""
@@ -165,7 +176,7 @@ class Config:
 # ======================================================================
 
 MARKET_LABEL = {"us": "미국(나스닥)", "kr": "한국(코스피·코스닥)",
-                "crypto": "크립토(바이낸스)", "all": "전체"}
+                "etf": "미국 ETF", "crypto": "크립토(바이낸스)", "all": "전체"}
 
 # 종목 파일의 인라인 주석(코드 # 종목명)에서 읽어온 이름 저장소
 _FILE_NAMES: dict = {}
@@ -193,15 +204,19 @@ def load_universe(market: str = "us") -> list[str]:
     us_file = os.path.join(here, "tickers_us.txt")
     kr_file = os.path.join(here, "tickers_kr.txt")
     cr_file = os.path.join(here, "tickers_crypto.txt")
+    etf_file = os.path.join(here, "tickers_etf.txt")
     us = _read_ticker_file(us_file) if os.path.exists(us_file) else list(DEFAULT_UNIVERSE)
     kr = _read_ticker_file(kr_file) if os.path.exists(kr_file) else list(KR_UNIVERSE)
     cr = _read_ticker_file(cr_file) if os.path.exists(cr_file) else list(CRYPTO_UNIVERSE)
+    etf = _read_ticker_file(etf_file) if os.path.exists(etf_file) else list(ETF_UNIVERSE)
     if market == "kr":
         return kr
     if market == "crypto":
         return cr
+    if market == "etf":
+        return etf
     if market == "all":
-        return us + kr + cr
+        return us + kr + etf + cr
     return us
 
 
