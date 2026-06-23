@@ -20,6 +20,14 @@ CHARTS = os.path.join(SITE, "charts")
 KST = timezone(timedelta(hours=9))
 
 
+def chart_url(ticker: str) -> str:
+    """종목 클릭 시 열릴 TradingView 차트 주소."""
+    if s.is_krw(ticker):                      # 005930.KS / 247540.KQ → KRX:005930
+        code = ticker.split(".")[0]
+        return f"https://www.tradingview.com/chart/?symbol=KRX:{code}"
+    return f"https://www.tradingview.com/chart/?symbol={ticker}"
+
+
 # ── 시그니처: 되돌림 게이지 (0=고점 → 1=저점, 0.382~0.618 매수구간) ──────────
 def gauge_html(setup: dict) -> str:
     r = setup["r_now"]
@@ -54,6 +62,7 @@ def card_html(market: str, c: dict) -> str:
     chart_rel = f"charts/{market}_{t.replace('.', '_')}.png"
     code_badge = f"<span class='code'>{t}</span>" if name != t else ""
     return f"""
+    <a class="card-link" href="{chart_url(t)}" target="_blank" rel="noopener">
     <article class="card reveal">
       <header class="card-h">
         <div class="ttl">
@@ -70,7 +79,9 @@ def card_html(market: str, c: dict) -> str:
         <div class="lv"><span>골든크로스</span><b>{str(s_['cross_date']).split(' ')[0]}</b></div>
       </div>
       <div class="plate"><img loading="lazy" src="{chart_rel}" alt="{name} chart"></div>
-    </article>"""
+      <div class="open">TradingView에서 차트 열기 ↗</div>
+    </article>
+    </a>"""
 
 
 def watch_html(watch: list) -> str:
@@ -153,9 +164,14 @@ body{margin:0;background:
 /* grid + card */
 .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
 @media(max-width:720px){.grid{grid-template-columns:1fr}}
+a.card-link{display:block;text-decoration:none;color:inherit}
 .card{background:linear-gradient(180deg,var(--panel2),var(--panel));
   border:1px solid var(--line);border-radius:14px;padding:16px 16px 14px;
-  box-shadow:0 1px 0 rgba(255,255,255,.02) inset}
+  box-shadow:0 1px 0 rgba(255,255,255,.02) inset;
+  transition:transform .16s ease,border-color .16s ease}
+a.card-link:hover .card{border-color:var(--gold);transform:translateY(-2px)}
+.open{margin-top:11px;text-align:right;font-size:11.5px;color:var(--mut);transition:color .16s}
+a.card-link:hover .open{color:var(--gold)}
 .card-h{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
 .ttl{display:flex;align-items:baseline;gap:8px;min-width:0}
 .nm{font-weight:700;font-size:16px;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

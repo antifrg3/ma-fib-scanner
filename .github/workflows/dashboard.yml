@@ -1,6 +1,8 @@
 name: dashboard   # 매일 장 마감 후 스캔 → 웹 대시보드 자동 배포 (GitHub Pages)
 
 on:
+  push:
+    branches: [main]          # 파일을 고쳐 올리면 자동 재배포
   schedule:
     - cron: "0 7 * * 1-5"    # 16:00 KST · 한국장 마감 후
     - cron: "0 22 * * 1-5"   # 07:00 KST(다음날) · 미국장 마감 후

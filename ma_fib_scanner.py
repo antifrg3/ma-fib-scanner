@@ -258,8 +258,9 @@ def build_setup(df: pd.DataFrame, cross_date, cfg: Config) -> dict | None:
 
     fib_prices = {r: high - r * rng for r in cfg.fib_show}
     buy_prices = {r: high - r * rng for r in cfg.buy_levels}
-    stop = low - 0.02 * rng                 # 매수구간 하단 살짝 아래
-    take_profit = high                      # 문서: 익절은 피보 설정 시의 고점
+    zone_bottom = max(cfg.buy_levels)                 # 0.618 = 매수구간 하단
+    stop = high - zone_bottom * rng - 0.02 * rng      # 0.618 라인 살짝 아래(원문 a 방식)
+    take_profit = high                                # 문서: 익절은 피보 설정 시의 고점
 
     return {
         "low": low, "high": high, "range": rng, "price": price, "r_now": r_now,
