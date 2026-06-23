@@ -230,6 +230,12 @@ body{margin:0;background:
 .sub{color:var(--mut);font-size:13px}
 .stamp{margin-left:auto;color:var(--mut);font-size:12.5px}
 .stamp b{color:var(--tx);font-weight:600}
+.nav{display:flex;gap:8px;margin:16px 0 4px}
+.nav a{text-decoration:none;font-size:13px;color:var(--mut);border:1px solid var(--line);
+  padding:7px 15px;border-radius:999px;transition:.15s;font-weight:600}
+.nav a.active{color:var(--ink);background:var(--gold);border-color:var(--gold)}
+.nav a:hover{border-color:var(--gold)}
+.nav a.active:hover{color:var(--ink)}
 
 /* tabs */
 .tabs{display:flex;gap:6px;margin:20px 0 8px}
@@ -379,6 +385,16 @@ MARKETS = [("us", "🇺🇸 미국"), ("etf", "🇺🇸 ETF"), ("kr", "🇰🇷 
            ("kretf", "🇰🇷 ETF"), ("crypto", "🪙 크립토")]
 
 
+def nav_html(active: str) -> str:
+    def a(href, label, key):
+        cls = "active" if key == active else ""
+        return f'<a class="{cls}" href="{href}">{label}</a>'
+    return ('<div class="nav">'
+            + a("index.html", "📉 눌림목", "pullback")
+            + a("breakout.html", "🚀 돌파", "breakout")
+            + '</div>')
+
+
 def page_html(stamp: str, sections: dict, meta: dict) -> str:
     tabs = "".join(
         f'<button class="tab" role="tab" data-m="{mid}">{label} '
@@ -402,6 +418,8 @@ def page_html(stamp: str, sections: dict, meta: dict) -> str:
     <span class="sub">골든크로스 후 피보나치 되돌림</span>
     <span class="stamp">갱신 <b>{stamp}</b> KST</span>
   </div>
+
+  {nav_html("pullback")}
 
   <div class="tabs" role="tablist">
     {tabs}

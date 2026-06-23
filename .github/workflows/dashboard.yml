@@ -43,6 +43,9 @@ jobs:
       - name: Build dashboard
         run: python build_site.py
 
+      - name: Build breakout page
+        run: python build_breakout.py
+
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
