@@ -53,6 +53,51 @@ def gauge_html(setup: dict) -> str:
     </div>"""
 
 
+def _sig(good: bool, bad: bool) -> str:
+    return "sig-good" if good else ("sig-bad" if bad else "")
+
+
+def metrics_html(c: dict) -> str:
+    m = c.get("metrics") or {}
+    t = c["ticker"]
+    fp = lambda x: s.fmt_price(x, t)
+
+    r = m.get("r_mult")
+    r_txt = f"{r:.1f}배" if r is not None else "—"
+    r_cls = "sig-good" if (r and r >= 2) else ("sig-bad" if (r and r < 1) else "sig-warn")
+
+    risk_pct, atr_stop = m.get("risk_pct"), m.get("atr_stop")
+    risk_txt = (f"{risk_pct:.1f}%" if risk_pct is not None else "—") + " · ATR손절 " + (fp(atr_stop) if atr_stop else "—")
+
+    rsi = m.get("rsi")
+    rsi_txt = f"{rsi:.0f}" if rsi is not None else "—"
+    rsi_cls = _sig(bool(rsi and 40 <= rsi <= 60), bool(rsi and (rsi < 35 or rsi > 70)))
+
+    vr = m.get("vol_ratio")
+    vol_txt = (f"{vr:.2f}× 평균 " + ("줄어듦" if vr < 1 else "늘어남")) if vr is not None else "—"
+    vol_cls = _sig(bool(vr and vr < 1.0), bool(vr and vr > 1.2))
+
+    rs = m.get("rs60")
+    rs_txt = (f"{rs:+.1f}%p vs 지수") if rs is not None else "—"
+    rs_cls = _sig(bool(rs is not None and rs > 0), bool(rs is not None and rs < 0))
+
+    tsl = m.get("trend_slope")
+    tr_txt = (f"200일선 {tsl:+.1f}%") if tsl is not None else "—"
+    tr_cls = _sig(bool(tsl is not None and tsl > 0), bool(tsl is not None and tsl < 0))
+
+    return f"""
+      <div class="panel">
+        <div class="panel-h">정밀 분석</div>
+        <div class="mrow"><span>손익비 (R)</span><b class="{r_cls}">{r_txt}</b></div>
+        <div class="mrow"><span>손절폭 · ATR손절</span><b>{risk_txt}</b></div>
+        <div class="mrow"><span>RSI(14)</span><b class="{rsi_cls}">{rsi_txt}</b></div>
+        <div class="mrow"><span>눌림 거래량</span><b class="{vol_cls}">{vol_txt}</b></div>
+        <div class="mrow"><span>상대강도(60일)</span><b class="{rs_cls}">{rs_txt}</b></div>
+        <div class="mrow"><span>추세</span><b class="{tr_cls}">{tr_txt}</b></div>
+        <div class="mrow"><span>포지션 사이징</span><b class="size-out">—</b></div>
+      </div>"""
+
+
 def card_html(market: str, c: dict) -> str:
     s_ = c["setup"]
     t = c["ticker"]
@@ -62,7 +107,8 @@ def card_html(market: str, c: dict) -> str:
     chart_rel = f"charts/{market}_{t.replace('.', '_')}.png"
     code_badge = f"<span class='code'>{t}</span>" if name != t else ""
     return f"""
-    <a class="card-link" href="{chart_url(t)}" target="_blank" rel="noopener">
+    <a class="card-link" href="{chart_url(t)}" target="_blank" rel="noopener"
+       data-entry="{s_['price']:.4f}" data-stop="{s_['stop']:.4f}">
     <article class="card reveal">
       <header class="card-h">
         <div class="ttl">
@@ -78,6 +124,7 @@ def card_html(market: str, c: dict) -> str:
         <div class="lv"><span>손절</span><b>{fp(s_['stop'])}</b></div>
         <div class="lv"><span>골든크로스</span><b>{str(s_['cross_date']).split(' ')[0]}</b></div>
       </div>
+      {metrics_html(c)}
       <div class="plate"><img loading="lazy" src="{chart_rel}" alt="{name} chart"></div>
       <div class="open">TradingView에서 차트 열기 ↗</div>
     </article>
@@ -109,6 +156,13 @@ def section_html(market: str, results: list) -> str:
         body = ("<div class='empty'>오늘 분할매수 구간(0.382~0.618)에 들어온 종목이 없습니다. "
                 "관찰 대상만 확인하세요.</div>")
 
+    cur = "USD" if market == "us" else "KRW"
+    acct_default = "10000" if market == "us" else "10000000"
+    sizer = (f"<div class='sizer'>포지션 사이징 계산 — 계좌 "
+             f"<input type='number' class='acct' value='{acct_default}'> · 리스크 "
+             f"<input type='number' class='risk' value='1' step='0.1'>% "
+             f"<span class='cur'>({cur} 기준 · 1회 손실 한도)</span></div>")
+
     return f"""
     <section id="sec-{mid}" class="market {active}">
       <div class="sec-meta">
@@ -116,6 +170,7 @@ def section_html(market: str, results: list) -> str:
         <span class="cnt"><b>{len(watch)}</b> 관찰</span>
         <span class="cnt"><b>{len(results)}</b> 신호 종목</span>
       </div>
+      {sizer if charted else ''}
       {body}
       {watch_html(watch)}
     </section>"""
@@ -172,6 +227,19 @@ a.card-link{display:block;text-decoration:none;color:inherit}
 a.card-link:hover .card{border-color:var(--gold);transform:translateY(-2px)}
 .open{margin-top:11px;text-align:right;font-size:11.5px;color:var(--mut);transition:color .16s}
 a.card-link:hover .open{color:var(--gold)}
+
+/* analysis panel */
+.panel{margin-top:13px;border-top:1px solid var(--line);padding-top:10px}
+.panel-h{font-size:10.5px;letter-spacing:.08em;color:var(--mut);margin-bottom:6px;text-transform:uppercase}
+.mrow{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;padding:2.5px 0;border-bottom:1px dashed rgba(255,255,255,.045)}
+.mrow span{color:var(--mut)}
+.mrow b{font-family:"IBM Plex Mono",monospace;font-weight:600}
+.sig-good{color:var(--jade)}
+.sig-warn{color:var(--gold)}
+.sig-bad{color:var(--clay)}
+.sizer{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:2px 2px 16px;font-size:12.5px;color:var(--mut)}
+.sizer input{width:104px;background:var(--panel);border:1px solid var(--line);color:var(--tx);border-radius:6px;padding:5px 8px;font:inherit;font-family:"IBM Plex Mono",monospace}
+.sizer .cur{color:var(--mut);font-size:11.5px}
 .card-h{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
 .ttl{display:flex;align-items:baseline;gap:8px;min-width:0}
 .nm{font-weight:700;font-size:16px;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -241,6 +309,25 @@ let init='us';try{init=localStorage.getItem('mkt')||'us'}catch(e){}
 sel(init);
 // staggered reveal
 [...document.querySelectorAll('.reveal')].forEach((el,i)=>el.style.animationDelay=(i%8*40)+'ms');
+
+// position sizing: shares = floor((account * risk%) / (entry - stop))
+function sizeAll(sec){
+  if(!sec) return;
+  const acct=parseFloat(sec.querySelector('.acct')?.value||0);
+  const risk=parseFloat(sec.querySelector('.risk')?.value||0);
+  sec.querySelectorAll('.card-link').forEach(a=>{
+    const e=parseFloat(a.dataset.entry), st=parseFloat(a.dataset.stop);
+    const out=a.querySelector('.size-out'); if(!out) return;
+    if(e>st && acct>0 && risk>0){
+      const shares=Math.floor((acct*risk/100)/(e-st));
+      out.textContent = shares.toLocaleString()+'주 · 투입 '+Math.round(shares*e).toLocaleString();
+    } else { out.textContent='—'; }
+  });
+}
+document.querySelectorAll('.sizer input').forEach(inp=>{
+  inp.addEventListener('input', ()=>sizeAll(inp.closest('.market')));
+});
+Object.values(secs).forEach(sizeAll);
 """
 
 

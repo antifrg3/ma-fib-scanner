@@ -282,6 +282,66 @@ def classify(r_now: float, cfg: Config) -> tuple[str, str]:
     return (f"🔴 되돌림 {r_now*100:.0f}% (저점 이탈·셋업 무효 가능)", "invalid")
 
 
+# ── 정밀 분석 지표 (리스크 + 기술 확인) ──────────────────────────────────
+def _rsi(close: pd.Series, n: int = 14) -> pd.Series:
+    d = close.diff()
+    up = d.clip(lower=0).ewm(alpha=1 / n, adjust=False).mean()
+    dn = (-d.clip(upper=0)).ewm(alpha=1 / n, adjust=False).mean()
+    rs = up / dn.replace(0, np.nan)
+    return 100 - 100 / (1 + rs)
+
+
+def _atr(df: pd.DataFrame, n: int = 14) -> pd.Series:
+    h, l, c = df["High"], df["Low"], df["Close"]
+    pc = c.shift(1)
+    tr = pd.concat([(h - l), (h - pc).abs(), (l - pc).abs()], axis=1).max(axis=1)
+    return tr.ewm(alpha=1 / n, adjust=False).mean()
+
+
+def compute_metrics(df: pd.DataFrame, setup: dict, bench_ret: float | None = None) -> dict:
+    price, stop, high = setup["price"], setup["stop"], setup["high"]
+    r_mult = (high - price) / (price - stop) if price > stop else None
+    risk_pct = (price - stop) / price * 100 if price > 0 else None
+
+    atr_s = _atr(df).dropna()
+    atr = float(atr_s.iloc[-1]) if len(atr_s) else None
+    atr_stop = price - 2 * atr if atr else None
+
+    rsi_s = _rsi(df["Close"]).dropna()
+    rsi_v = float(rsi_s.iloc[-1]) if len(rsi_s) else None
+
+    v = df["Volume"]
+    vol_ratio = None
+    if len(v) >= 60:
+        recent = v.tail(10).mean()
+        base = v.tail(60).head(50).mean()
+        if base > 0:
+            vol_ratio = float(recent / base)
+
+    mad = df["ma_daily"].dropna()
+    trend_slope = float((mad.iloc[-1] / mad.iloc[-21] - 1) * 100) if len(mad) > 21 else None
+
+    c = df["Close"]
+    stock_ret = float((c.iloc[-1] / c.iloc[-61] - 1) * 100) if len(c) > 61 else None
+    rs60 = (stock_ret - bench_ret) if (stock_ret is not None and bench_ret is not None) else None
+
+    return {"r_mult": r_mult, "risk_pct": risk_pct, "atr": atr, "atr_stop": atr_stop,
+            "rsi": rsi_v, "vol_ratio": vol_ratio, "trend_slope": trend_slope,
+            "stock_ret60": stock_ret, "rs60": rs60}
+
+
+def bench_return(market: str, cfg: "Config") -> float | None:
+    """상대강도용 벤치마크 60거래일 수익률. 미국=SPY, 한국=코스피지수."""
+    sym = "^KS11" if market == "kr" else "SPY"
+    try:
+        c = fetch_daily(sym, cfg.daily_period)["Close"]
+        if len(c) > 61:
+            return float((c.iloc[-1] / c.iloc[-61] - 1) * 100)
+    except Exception:
+        return None
+    return None
+
+
 # ======================================================================
 # 3) 차트
 # ======================================================================
@@ -337,7 +397,7 @@ def render_chart(ticker: str, df: pd.DataFrame, setup: dict, label: str, cfg: Co
 # 4) 스캔
 # ======================================================================
 
-def scan_one(ticker: str, cfg: Config) -> dict | None:
+def scan_one(ticker: str, cfg: Config, bench_ret: float | None = None) -> dict | None:
     daily = fetch_daily(ticker, cfg.daily_period)
     if daily is None or len(daily) < cfg.daily_ma + 5:
         return None
@@ -362,16 +422,20 @@ def scan_one(ticker: str, cfg: Config) -> dict | None:
         return None
 
     img = render_chart(ticker, df, setup, label, cfg)
+    metrics = compute_metrics(df, setup, bench_ret)
     return {"ticker": ticker, "tier": tier, "label": label,
-            "price": setup["price"], "df": df, "setup": setup, "img": img}
+            "price": setup["price"], "df": df, "setup": setup, "img": img,
+            "metrics": metrics}
 
 
 def scan_all(cfg: Config) -> list[dict]:
     out = []
     universe = load_universe(cfg.market)
+    bench = bench_return(cfg.market, cfg)  # 상대강도 기준(지수 60일 수익률)
+    print(f"벤치마크 60일 수익률: {bench:.1f}%" if bench is not None else "벤치마크 수익률 없음")
     for i, t in enumerate(universe, 1):
         try:
-            res = scan_one(t, cfg)
+            res = scan_one(t, cfg, bench)
             if res:
                 out.append(res)
                 print(f"[{i}/{len(universe)}] {t}: {res['tier']} · {res.get('label','')}")
