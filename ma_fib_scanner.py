@@ -22,8 +22,10 @@ from __future__ import annotations
 import os
 import io
 import sys
+import json
 import time
 import smtplib
+import urllib.request
 import traceback
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -76,6 +78,15 @@ KR_NAME_MAP = {
 }
 KR_UNIVERSE = list(KR_NAME_MAP.keys())
 
+# 크립토(바이낸스 USDT 페어). 변동성·유동성 큰 시총 상위 위주.
+CRYPTO_UNIVERSE = [
+    "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT",
+    "DOGEUSDT", "AVAXUSDT", "LINKUSDT", "DOTUSDT", "TRXUSDT", "LTCUSDT",
+    "BCHUSDT", "ATOMUSDT", "UNIUSDT", "NEARUSDT", "APTUSDT", "ARBUSDT",
+    "OPUSDT", "FILUSDT", "INJUSDT", "SUIUSDT", "TONUSDT", "ICPUSDT",
+    "ETCUSDT", "XLMUSDT", "HBARUSDT", "AAVEUSDT",
+]
+
 
 def normalize_ticker(t: str) -> str:
     """6자리 숫자만 입력하면 코스피(.KS)로 간주. 코스닥은 직접 .KQ 붙여야 함."""
@@ -89,12 +100,26 @@ def is_krw(ticker: str) -> bool:
     return ticker.upper().endswith((".KS", ".KQ"))
 
 
+def is_crypto(ticker: str) -> bool:
+    return ticker.upper().endswith("USDT")
+
+
 def display_name(ticker: str) -> str:
+    if is_crypto(ticker):
+        return _FILE_NAMES.get(ticker.upper(), ticker[:-4])  # BTCUSDT → BTC
     return _FILE_NAMES.get(ticker.upper(), KR_NAME_MAP.get(ticker.upper(), ticker))
 
 
 def fmt_price(price: float, ticker: str) -> str:
-    return f"{price:,.0f}" if is_krw(ticker) else f"{price:,.2f}"
+    if is_krw(ticker):
+        return f"{price:,.0f}"
+    if is_crypto(ticker):
+        if price >= 100:
+            return f"{price:,.2f}"
+        if price >= 1:
+            return f"{price:,.3f}"
+        return f"{price:,.6f}".rstrip("0").rstrip(".")
+    return f"{price:,.2f}"
 
 
 @dataclass
@@ -138,7 +163,8 @@ class Config:
 # 2) 데이터 / 지표
 # ======================================================================
 
-MARKET_LABEL = {"us": "미국(나스닥)", "kr": "한국(코스피·코스닥)", "all": "미국+한국"}
+MARKET_LABEL = {"us": "미국(나스닥)", "kr": "한국(코스피·코스닥)",
+                "crypto": "크립토(바이낸스)", "all": "전체"}
 
 # 종목 파일의 인라인 주석(코드 # 종목명)에서 읽어온 이름 저장소
 _FILE_NAMES: dict = {}
@@ -161,16 +187,20 @@ def _read_ticker_file(path: str) -> list[str]:
 
 
 def load_universe(market: str = "us") -> list[str]:
-    """시장별 종목 목록. tickers_us.txt / tickers_kr.txt 가 있으면 그걸 우선 사용."""
+    """시장별 종목 목록. tickers_us/kr/crypto.txt 가 있으면 그걸 우선 사용."""
     here = os.path.dirname(os.path.abspath(__file__))
     us_file = os.path.join(here, "tickers_us.txt")
     kr_file = os.path.join(here, "tickers_kr.txt")
+    cr_file = os.path.join(here, "tickers_crypto.txt")
     us = _read_ticker_file(us_file) if os.path.exists(us_file) else list(DEFAULT_UNIVERSE)
     kr = _read_ticker_file(kr_file) if os.path.exists(kr_file) else list(KR_UNIVERSE)
+    cr = _read_ticker_file(cr_file) if os.path.exists(cr_file) else list(CRYPTO_UNIVERSE)
     if market == "kr":
         return kr
+    if market == "crypto":
+        return cr
     if market == "all":
-        return us + kr
+        return us + kr + cr
     return us
 
 
@@ -202,6 +232,55 @@ def fetch_intraday_4h(ticker: str) -> pd.DataFrame | None:
     agg = {"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}
     four = h.resample("4h").agg(agg).dropna()
     return four if not four.empty else None
+
+
+# ── 크립토(바이낸스) ─────────────────────────────────────────────────────
+# 미국 IP 차단을 피하려 지역제한 없는 공개 엔드포인트를 우선 사용
+BINANCE_BASES = ["https://data-api.binance.vision", "https://api.binance.com"]
+
+
+def _binance_klines(symbol: str, interval: str, limit: int = 1000):
+    last_err = None
+    for base in BINANCE_BASES:
+        try:
+            url = f"{base}/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=25) as r:
+                data = json.loads(r.read().decode())
+            if isinstance(data, list) and data:
+                return data
+        except Exception as e:
+            last_err = e
+            continue
+    raise RuntimeError(f"Binance klines 실패 {symbol} {interval}: {last_err}")
+
+
+def _klines_to_df(data) -> pd.DataFrame:
+    rows = [(pd.to_datetime(k[0], unit="ms"), float(k[1]), float(k[2]),
+             float(k[3]), float(k[4]), float(k[5])) for k in data]
+    df = pd.DataFrame(rows, columns=["Date", "Open", "High", "Low", "Close", "Volume"])
+    return df.set_index("Date")
+
+
+def fetch_daily_crypto(symbol: str) -> pd.DataFrame | None:
+    try:
+        return _klines_to_df(_binance_klines(symbol, "1d", 1000))
+    except Exception:
+        return None
+
+
+def fetch_4h_crypto(symbol: str) -> pd.DataFrame | None:
+    try:
+        return _klines_to_df(_binance_klines(symbol, "4h", 1000))
+    except Exception:
+        return None
+
+
+def get_data(ticker: str, cfg: "Config"):
+    """시장에 맞는 (일봉, 4시간봉) 데이터를 반환."""
+    if cfg.market == "crypto" or is_crypto(ticker):
+        return fetch_daily_crypto(ticker), fetch_4h_crypto(ticker)
+    return fetch_daily(ticker, cfg.daily_period), fetch_intraday_4h(ticker)
 
 
 def attach_indicators(daily: pd.DataFrame, four: pd.DataFrame | None, cfg: Config) -> pd.DataFrame:
@@ -331,11 +410,15 @@ def compute_metrics(df: pd.DataFrame, setup: dict, bench_ret: float | None = Non
 
 
 def bench_return(market: str, cfg: "Config") -> float | None:
-    """상대강도용 벤치마크 60거래일 수익률. 미국=SPY, 한국=코스피지수."""
-    sym = "^KS11" if market == "kr" else "SPY"
+    """상대강도용 벤치마크 60거래일 수익률. 미국=SPY, 한국=코스피지수, 크립토=BTC."""
     try:
-        c = fetch_daily(sym, cfg.daily_period)["Close"]
-        if len(c) > 61:
+        if market == "crypto":
+            c = fetch_daily_crypto("BTCUSDT")
+            c = c["Close"] if c is not None else None
+        else:
+            sym = "^KS11" if market == "kr" else "SPY"
+            c = fetch_daily(sym, cfg.daily_period)["Close"]
+        if c is not None and len(c) > 61:
             return float((c.iloc[-1] / c.iloc[-61] - 1) * 100)
     except Exception:
         return None
@@ -398,10 +481,9 @@ def render_chart(ticker: str, df: pd.DataFrame, setup: dict, label: str, cfg: Co
 # ======================================================================
 
 def scan_one(ticker: str, cfg: Config, bench_ret: float | None = None) -> dict | None:
-    daily = fetch_daily(ticker, cfg.daily_period)
+    daily, four = get_data(ticker, cfg)
     if daily is None or len(daily) < cfg.daily_ma + 5:
         return None
-    four = fetch_intraday_4h(ticker)
     df = attach_indicators(daily, four, cfg)
 
     cross = find_recent_golden_cross(df, cfg)

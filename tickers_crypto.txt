@@ -1,0 +1,31 @@
+# 크립토 스캔 대상 (바이낸스 USDT 페어)
+# 한 줄에 하나. '#' 뒤는 표시용 이름(주석).
+# 변동성·유동성 큰 시총 상위 위주. 잡코인은 패턴 신뢰도가 낮아 권장하지 않음.
+BTCUSDT    # 비트코인
+ETHUSDT    # 이더리움
+BNBUSDT    # BNB
+SOLUSDT    # 솔라나
+XRPUSDT    # 리플
+ADAUSDT    # 에이다
+DOGEUSDT   # 도지코인
+AVAXUSDT   # 아발란체
+LINKUSDT   # 체인링크
+DOTUSDT    # 폴카닷
+TRXUSDT    # 트론
+LTCUSDT    # 라이트코인
+BCHUSDT    # 비트코인캐시
+ATOMUSDT   # 코스모스
+UNIUSDT    # 유니스왑
+NEARUSDT   # 니어
+APTUSDT    # 앱토스
+ARBUSDT    # 아비트럼
+OPUSDT     # 옵티미즘
+FILUSDT    # 파일코인
+INJUSDT    # 인젝티브
+SUIUSDT    # 수이
+TONUSDT    # 톤코인
+ICPUSDT    # 인터넷컴퓨터
+ETCUSDT    # 이더리움클래식
+XLMUSDT    # 스텔라루멘
+HBARUSDT   # 헤데라
+AAVEUSDT   # 아베
