@@ -1,0 +1,47 @@
+name: dashboard   # 매일 장 마감 후 스캔 → 웹 대시보드 자동 배포 (GitHub Pages)
+
+on:
+  schedule:
+    - cron: "0 7 * * 1-5"    # 16:00 KST · 한국장 마감 후
+    - cron: "0 22 * * 1-5"   # 07:00 KST(다음날) · 미국장 마감 후
+  workflow_dispatch:          # 수동 실행 버튼
+
+# GitHub Pages 배포 권한
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: pip install -r requirements.txt pykrx
+
+      - name: Refresh universe (코스피200 + 나스닥100 최신화)
+        run: python build_universe.py
+        continue-on-error: true   # 실패해도 기존 종목 파일로 진행
+
+      - name: Build dashboard
+        run: python build_site.py
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: "site"
+      - id: deployment
+        uses: actions/deploy-pages@v4
