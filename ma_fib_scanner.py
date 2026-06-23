@@ -98,6 +98,17 @@ ETF_UNIVERSE = [
     "GLD", "SLV", "TLT", "HYG",                                  # 원자재/채권
 ]
 
+# 한국 ETF (yfinance, .KS). 평소엔 build_universe.py가 거래대금 상위로 자동 생성.
+# 아래는 자동 생성 실패 시 폴백용 메이저 목록.
+KR_ETF_NAMES = {
+    "069500": "KODEX 200", "102110": "TIGER 200", "229200": "KODEX 코스닥150",
+    "091160": "KODEX 반도체", "360750": "TIGER 미국S&P500",
+    "133690": "TIGER 미국나스닥100", "379800": "KODEX 미국S&P500TR",
+    "381180": "TIGER 미국필라델피아반도체나스닥", "305720": "KODEX 2차전지산업",
+}
+KR_ETF_UNIVERSE = [f"{c}.KS" for c in KR_ETF_NAMES]
+KR_ETF_NAME_MAP = {f"{c}.KS": n for c, n in KR_ETF_NAMES.items()}
+
 
 def normalize_ticker(t: str) -> str:
     """6자리 숫자만 입력하면 코스피(.KS)로 간주. 코스닥은 직접 .KQ 붙여야 함."""
@@ -118,7 +129,8 @@ def is_crypto(ticker: str) -> bool:
 def display_name(ticker: str) -> str:
     if is_crypto(ticker):
         return _FILE_NAMES.get(ticker.upper(), ticker[:-4])  # BTCUSDT → BTC
-    return _FILE_NAMES.get(ticker.upper(), KR_NAME_MAP.get(ticker.upper(), ticker))
+    u = ticker.upper()
+    return _FILE_NAMES.get(u, KR_NAME_MAP.get(u, KR_ETF_NAME_MAP.get(u, ticker)))
 
 
 def fmt_price(price: float, ticker: str) -> str:
@@ -176,7 +188,8 @@ class Config:
 # ======================================================================
 
 MARKET_LABEL = {"us": "미국(나스닥)", "kr": "한국(코스피·코스닥)",
-                "etf": "미국 ETF", "crypto": "크립토(바이낸스)", "all": "전체"}
+                "etf": "미국 ETF", "kretf": "한국 ETF",
+                "crypto": "크립토(바이낸스)", "all": "전체"}
 
 # 종목 파일의 인라인 주석(코드 # 종목명)에서 읽어온 이름 저장소
 _FILE_NAMES: dict = {}
@@ -205,18 +218,22 @@ def load_universe(market: str = "us") -> list[str]:
     kr_file = os.path.join(here, "tickers_kr.txt")
     cr_file = os.path.join(here, "tickers_crypto.txt")
     etf_file = os.path.join(here, "tickers_etf.txt")
+    kretf_file = os.path.join(here, "tickers_kr_etf.txt")
     us = _read_ticker_file(us_file) if os.path.exists(us_file) else list(DEFAULT_UNIVERSE)
     kr = _read_ticker_file(kr_file) if os.path.exists(kr_file) else list(KR_UNIVERSE)
     cr = _read_ticker_file(cr_file) if os.path.exists(cr_file) else list(CRYPTO_UNIVERSE)
     etf = _read_ticker_file(etf_file) if os.path.exists(etf_file) else list(ETF_UNIVERSE)
+    kretf = _read_ticker_file(kretf_file) if os.path.exists(kretf_file) else list(KR_ETF_UNIVERSE)
     if market == "kr":
         return kr
     if market == "crypto":
         return cr
     if market == "etf":
         return etf
+    if market == "kretf":
+        return kretf
     if market == "all":
-        return us + kr + etf + cr
+        return us + kr + etf + kretf + cr
     return us
 
 
@@ -453,7 +470,7 @@ def bench_return(market: str, cfg: "Config") -> float | None:
             c = fetch_daily_crypto("BTCUSDT")
             c = c["Close"] if c is not None else None
         else:
-            sym = "^KS11" if market == "kr" else "SPY"
+            sym = "^KS11" if market in ("kr", "kretf") else "SPY"
             c = fetch_daily(sym, cfg.daily_period)["Close"]
         if c is not None and len(c) > 61:
             return float((c.iloc[-1] / c.iloc[-61] - 1) * 100)

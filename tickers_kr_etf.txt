@@ -1,0 +1,11 @@
+# 한국 ETF — 평소엔 build_universe.py가 거래대금 상위로 자동 갱신.
+# 아래는 초기 시드(메이저). '#' 뒤는 표시용 이름.
+069500.KS   # KODEX 200
+102110.KS   # TIGER 200
+229200.KS   # KODEX 코스닥150
+091160.KS   # KODEX 반도체
+305720.KS   # KODEX 2차전지산업
+360750.KS   # TIGER 미국S&P500
+133690.KS   # TIGER 미국나스닥100
+379800.KS   # KODEX 미국S&P500TR
+381180.KS   # TIGER 미국필라델피아반도체나스닥

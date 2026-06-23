@@ -180,9 +180,58 @@ def write_crypto(top_n: int = CRYPTO_TOP_N):
     print(f"✅ tickers_crypto.txt : {len(top)}종목 (24h 거래대금 TOP {top_n})")
 
 
+def write_kr_etf(top_n: int = 40):
+    """pykrx로 한국 ETF 거래대금 상위 N개 생성 (레버리지/인버스 제외)."""
+    try:
+        from pykrx import stock
+        date = stock.get_nearest_business_day_in_a_week()
+        codes = stock.get_etf_ticker_list(date)
+        try:
+            ohlcv = stock.get_etf_ohlcv_by_ticker(date)
+            val_col = next((c for c in ohlcv.columns if "거래대금" in c), None)
+        except Exception:
+            ohlcv, val_col = None, None
+
+        skip = ("레버리지", "인버스", "2X", "3X", "곱버스", "선물인버스")
+        rows = []
+        for c in codes:
+            try:
+                name = stock.get_etf_ticker_name(c)
+            except Exception:
+                name = ""
+            if any(k in name for k in skip):
+                continue
+            val = 0.0
+            if ohlcv is not None and val_col and c in ohlcv.index:
+                try:
+                    val = float(ohlcv.loc[c, val_col])
+                except Exception:
+                    val = 0.0
+            rows.append((str(c).zfill(6), name, val))
+
+        if val_col:
+            rows.sort(key=lambda x: x[2], reverse=True)
+        top = rows[:top_n]
+        if not top:
+            print("❌ 한국 ETF 목록 비어있음 — 기존 tickers_kr_etf.txt 유지")
+            return
+        with open("tickers_kr_etf.txt", "w", encoding="utf-8") as f:
+            f.write("# 한국 ETF — pykrx 거래대금 상위 (build_universe.py 자동 생성)\n")
+            f.write(f"# 상위 {top_n}개 · 레버리지/인버스 제외\n")
+            for code, name, _v in top:
+                line = f"{code}.KS"
+                if name:
+                    line += f"   # {name}"
+                f.write(line + "\n")
+        print(f"✅ tickers_kr_etf.txt : {len(top)}종목 (거래대금 TOP {top_n})")
+    except Exception as e:
+        print("❌ 한국 ETF 생성 실패 — 기존 파일 유지:", e)
+
+
 if __name__ == "__main__":
     print("종목 파일 생성 중...")
     write_us()
     write_kr()
+    write_kr_etf()
     write_crypto()
     print("끝. 이제 스캐너를 그대로 돌리면 확장된 목록으로 검색합니다.")

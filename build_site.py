@@ -183,8 +183,9 @@ def section_html(market: str, results: list) -> str:
         body = ("<div class='empty'>오늘 분할매수 구간(0.382~0.618)에 들어온 종목이 없습니다. "
                 "아래 크로스 단계에서 눌림 대기 중인 종목을 확인하세요.</div>")
 
-    cur = {"us": "USD", "kr": "KRW", "etf": "USD", "crypto": "USD"}.get(market, "USD")
-    acct_default = {"us": "10000", "kr": "10000000", "etf": "10000", "crypto": "10000"}.get(market, "10000")
+    cur = {"us": "USD", "kr": "KRW", "etf": "USD", "kretf": "KRW", "crypto": "USD"}.get(market, "USD")
+    acct_default = {"us": "10000", "kr": "10000000", "etf": "10000",
+                    "kretf": "10000000", "crypto": "10000"}.get(market, "10000")
     sizer = (f"<div class='sizer'>포지션 사이징 계산 — 계좌 "
              f"<input type='number' class='acct' value='{acct_default}'> · 리스크 "
              f"<input type='number' class='risk' value='1' step='0.1'>% "
@@ -374,7 +375,8 @@ Object.values(secs).forEach(sizeAll);
 """
 
 
-MARKETS = [("us", "🇺🇸 미국"), ("etf", "📊 ETF"), ("kr", "🇰🇷 한국"), ("crypto", "🪙 크립토")]
+MARKETS = [("us", "🇺🇸 미국"), ("etf", "🇺🇸 ETF"), ("kr", "🇰🇷 한국"),
+           ("kretf", "🇰🇷 ETF"), ("crypto", "🪙 크립토")]
 
 
 def page_html(stamp: str, sections: dict, meta: dict) -> str:
@@ -413,7 +415,7 @@ def page_html(stamp: str, sections: dict, meta: dict) -> str:
     게이지의 금색 구간이 분할매수 구간, 점은 현재 위치. 차트의 파란선=일봉200, 주황선=4시간봉200.
   </div>
   <div class="foot">
-    스캔 대상: 나스닥100 · 미국 ETF · 코스피200 · 크립토(바이낸스 시총 상위) · 데이터 Yahoo Finance/Binance · 매일 자동 갱신.<br>
+    스캔 대상: 나스닥100 · 미국 ETF · 코스피200 · 한국 ETF · 크립토(바이낸스 시총 상위) · 데이터 Yahoo Finance/Binance · 매일 자동 갱신.<br>
     본 페이지는 조건 충족 종목을 찾아주는 스크리너이며 투자 조언이 아닙니다.
     진입·손절·익절 판단은 본인 책임입니다. 크립토는 변동성이 커 ATR 손절·작은 비중을 권장하며,
     4시간봉 값은 TradingView와 다를 수 있어 최종 확인을 권장합니다.
