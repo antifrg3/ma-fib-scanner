@@ -19,6 +19,7 @@ import mplfinance as mpf
 
 import ma_fib_scanner as s
 import build_site as bs
+import regime
 
 # ── 탐지 파라미터 ────────────────────────────────────────────────────────
 MOVE_LOOKBACK = 90       # 선행 상승 탐색 창(거래일)
@@ -277,6 +278,7 @@ def section_html(market, results):
 
     return f"""
     <section id="sec-{market}" class="market {active}">
+      {regime.badge_html(regime.regime_for_market(market), "breakout")}
       <div class="sec-meta">
         <span class="cnt"><b>{len(broke)}</b> 돌파 발생</span>
         <span class="cnt"><b>{len(forming)}</b> 셋업 형성</span>

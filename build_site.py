@@ -14,6 +14,7 @@ import shutil
 from datetime import datetime, timedelta, timezone
 
 import ma_fib_scanner as s
+import regime
 
 SITE = "site"
 CHARTS = os.path.join(SITE, "charts")
@@ -193,6 +194,7 @@ def section_html(market: str, results: list) -> str:
 
     return f"""
     <section id="sec-{mid}" class="market {active}">
+      {regime.badge_html(regime.regime_for_market(market), "pullback")}
       <div class="sec-meta">
         <span class="cnt"><b>{len(charted)}</b> 매수구간</span>
         <span class="cnt"><b>{watch_n}</b> 크로스 관찰</span>
@@ -236,6 +238,16 @@ body{margin:0;background:
 .nav a.active{color:var(--ink);background:var(--gold);border-color:var(--gold)}
 .nav a:hover{border-color:var(--gold)}
 .nav a.active:hover{color:var(--ink)}
+.regime{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 14px;
+  padding:10px 14px;border:1px solid var(--line);border-radius:12px;background:var(--panel2)}
+.regime .rg-state{font-weight:700;color:var(--tx);font-size:13.5px}
+.regime .rg-bias{font-weight:700;padding:3px 11px;border-radius:999px;font-size:12px}
+.regime .rg-num{color:var(--mut);font-family:'IBM Plex Mono',monospace;font-size:11.5px}
+.regime .rg-hint{margin-left:auto;color:var(--mut);font-size:12.5px;font-weight:600}
+.rg-up{border-color:rgba(95,184,155,.38)} .rg-up .rg-bias{background:rgba(95,184,155,.15);color:var(--jade)}
+.rg-range{border-color:rgba(200,162,75,.34)} .rg-range .rg-bias{background:rgba(200,162,75,.15);color:var(--gold)}
+.rg-down{border-color:rgba(216,113,79,.40)} .rg-down .rg-bias{background:rgba(216,113,79,.15);color:var(--clay)}
+.rg-neu .rg-bias{background:rgba(136,135,128,.16);color:var(--mut)}
 
 /* tabs */
 .tabs{display:flex;gap:6px;margin:20px 0 8px}
