@@ -168,6 +168,36 @@ def stage_list_html(title: str, items: list) -> str:
             f"<div class='wl'>{rows}</div></div>")
 
 
+def crypto_holy_grail_html():
+    """크립토 전용: ADX>30 상승추세 중 20EMA 눌림(홀리 그레일) 후보 리스트."""
+    cfg = s.Config(); cfg.market = "crypto"
+    hits = []
+    for t in s.load_universe("crypto"):
+        try:
+            daily, _four = s.get_data(t, cfg)
+            hg = s.holy_grail(daily)
+            if hg:
+                hits.append((t, hg))
+        except Exception:
+            continue
+    if not hits:
+        return ""
+    rows = ""
+    for t, hg in sorted(hits, key=lambda x: -x[1]["adx"]):
+        name = s.display_name(t)
+        rp = f"손절 {s.fmt_price(hg['stop'], t)}"
+        risk = f" ({hg['risk_pct']:.1f}%)" if hg["risk_pct"] else ""
+        rows += (f"<a class='wl-row' href='{chart_url(t)}' target='_blank' rel='noopener'>"
+                 f"<span class='wl-nm'>{name}</span>"
+                 f"<span class='wl-meta'>ADX {hg['adx']:.0f} · 20EMA 눌림 · {rp}{risk}</span>"
+                 f"<span class='wl-wk sig-good'>추세눌림</span>"
+                 f"<span class='wl-px'>{s.fmt_price(hg['price'], t)}</span></a>")
+    return ("<div class='watch'><div class='watch-h'>🏆 홀리 그레일 · 추세 중 20EMA 눌림 "
+            f"<span class='muted'>{len(hits)}</span> "
+            "<span class='muted'>— ADX&gt;30 상승추세의 되돌림 매수(라쉬케·크립토 적합)</span></div>"
+            f"<div class='wl'>{rows}</div></div>")
+
+
 def section_html(market: str, results: list) -> str:
     charted = [r for r in results if r.get("img")]
     charted.sort(key=lambda r: r["setup"]["r_now"])
@@ -187,14 +217,17 @@ def section_html(market: str, results: list) -> str:
     cur = {"us": "USD", "kr": "KRW", "etf": "USD", "kretf": "KRW", "crypto": "USD"}.get(market, "USD")
     acct_default = {"us": "10000", "kr": "10000000", "etf": "10000",
                     "kretf": "10000000", "crypto": "10000"}.get(market, "10000")
+    r = regime.regime_for_market(market)
+    risk_default, gate_banner = regime.sizing_hint(r, "pullback")
     sizer = (f"<div class='sizer'>포지션 사이징 계산 — 계좌 "
              f"<input type='number' class='acct' value='{acct_default}'> · 리스크 "
-             f"<input type='number' class='risk' value='1' step='0.1'>% "
+             f"<input type='number' class='risk' value='{risk_default}' step='0.1'>% "
              f"<span class='cur'>({cur} 기준 · 1회 손실 한도)</span></div>")
 
     return f"""
     <section id="sec-{mid}" class="market {active}">
-      {regime.badge_html(regime.regime_for_market(market), "pullback")}
+      {regime.badge_html(r, "pullback")}
+      {gate_banner}
       <div class="sec-meta">
         <span class="cnt"><b>{len(charted)}</b> 매수구간</span>
         <span class="cnt"><b>{watch_n}</b> 크로스 관찰</span>
@@ -204,6 +237,7 @@ def section_html(market: str, results: list) -> str:
       {body}
       {stage_list_html("🟡 갓 골든크로스 · 눌림 대기", fresh)}
       {stage_list_html("🔵 상승 중 · 아직 안 눌림", wait)}
+      {crypto_holy_grail_html() if market == "crypto" else ""}
     </section>"""
 
 
@@ -248,6 +282,15 @@ body{margin:0;background:
 .rg-range{border-color:rgba(200,162,75,.34)} .rg-range .rg-bias{background:rgba(200,162,75,.15);color:var(--gold)}
 .rg-down{border-color:rgba(216,113,79,.40)} .rg-down .rg-bias{background:rgba(216,113,79,.15);color:var(--clay)}
 .rg-neu .rg-bias{background:rgba(136,135,128,.16);color:var(--mut)}
+.gate{margin:0 0 14px;padding:11px 15px;border-radius:11px;font-size:13.5px;font-weight:600;line-height:1.5}
+.gate-warn{background:rgba(200,162,75,.10);border:1px solid rgba(200,162,75,.34);color:var(--gold)}
+.gate-off{background:rgba(216,113,79,.10);border:1px solid rgba(216,113,79,.42);color:var(--clay)}
+.gate-note{background:rgba(95,184,155,.09);border:1px solid rgba(95,184,155,.30);color:var(--jade)}
+.tt-fail{display:block;font-size:11.5px;color:var(--mut);margin:-2px 0 6px;padding-left:2px}
+.limit-flag{margin:8px 0;padding:8px 12px;border-radius:9px;font-size:12.5px;font-weight:600;
+  background:rgba(216,113,79,.10);border:1px solid rgba(216,113,79,.40);color:var(--clay)}
+.fund-note{margin:10px 0 4px;padding:9px 12px;border-radius:9px;font-size:12px;line-height:1.5;
+  background:rgba(136,135,128,.08);border:1px solid var(--line);color:var(--mut)}
 
 /* tabs */
 .tabs{display:flex;gap:6px;margin:20px 0 8px}

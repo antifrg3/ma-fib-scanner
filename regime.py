@@ -108,3 +108,36 @@ def badge_html(r, active):
         f'<span class="rg-num">200일선 {r["above"]:+.1f}% · 기울기 {r["slope"]:+.1f}% · ADX {r["adx"]:.0f}</span>'
         f'<span class="rg-hint">{hint}</span>'
         f'</div>')
+
+
+def sizing_hint(r, active):
+    """국면 게이트: (기본 리스크%, 배너HTML). 돌파는 강세장 전제라 약세일수록 강하게 축소.
+    반환 risk는 사이징 계산기 기본값, banner는 약세 시 카드 위에 뜨는 경고 띠."""
+    default_risk, banner = "1", ""
+    if not r:
+        return default_risk, banner
+    bias = r["bias"]
+    if active == "breakout":
+        if bias == "breakout":
+            default_risk = "1"
+        elif bias in ("neutral_up", "neutral"):
+            default_risk = "0.75"
+            banner = ('<div class="gate gate-warn">⚠️ 국면 중립 — 돌파 신뢰도 보통. '
+                      '리스크를 평소의 3/4로 낮춰 시작하세요.</div>')
+        elif bias == "pullback":
+            default_risk = "0.5"
+            banner = ('<div class="gate gate-warn">⚠️ 횡보 국면 — 돌파는 가짜(휩쏘)가 늘어납니다. '
+                      '신규 비중을 절반으로 줄이고, 📉 눌림목 탭도 함께 보세요.</div>')
+        else:  # caution (하락 추세)
+            default_risk = "0.3"
+            banner = ('<div class="gate gate-off">🚫 약세 추세 — 돌파 전략에 가장 불리한 국면입니다. '
+                      '신규 진입은 최소화하고, 되도록 현금 비중을 유지하세요.</div>')
+    else:  # pullback 페이지
+        if bias == "caution":
+            default_risk = "0.5"
+            banner = ('<div class="gate gate-warn">⚠️ 하락 추세 — 눌림목이 그대로 흘러내릴 수 있습니다. '
+                      '손절을 특히 엄격히, 비중은 절반으로.</div>')
+        elif bias == "breakout":
+            banner = ('<div class="gate gate-note">강한 상승 추세입니다 — 되돌림이 얕을 수 있어요. '
+                      '🚀 돌파 탭도 함께 확인하세요.</div>')
+    return default_risk, banner

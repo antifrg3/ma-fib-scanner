@@ -410,6 +410,63 @@ def _atr(df: pd.DataFrame, n: int = 14) -> pd.Series:
     return tr.ewm(alpha=1 / n, adjust=False).mean()
 
 
+def _adx14(df: pd.DataFrame, n: int = 14):
+    h, l, c = df["High"], df["Low"], df["Close"]
+    up, dn = h.diff(), -l.diff()
+    import numpy as _np
+    pdm = pd.Series(_np.where((up > dn) & (up > 0), up, 0.0), index=df.index)
+    mdm = pd.Series(_np.where((dn > up) & (dn > 0), dn, 0.0), index=df.index)
+    tr = pd.concat([h - l, (h - c.shift()).abs(), (l - c.shift()).abs()], axis=1).max(axis=1)
+    atr = tr.ewm(alpha=1 / n, adjust=False).mean()
+    pdi = 100 * pdm.ewm(alpha=1 / n, adjust=False).mean() / atr
+    mdi = 100 * mdm.ewm(alpha=1 / n, adjust=False).mean() / atr
+    dx = 100 * (pdi - mdi).abs() / (pdi + mdi).replace(0, float("nan"))
+    return dx.ewm(alpha=1 / n, adjust=False).mean()
+
+
+def holy_grail(df: pd.DataFrame) -> dict | None:
+    """라쉬케 홀리 그레일: ADX(14)>30 상승추세에서 20EMA로 되돌림한 지점(눌림 매수).
+    크립토(및 추세 자산)용. 후보면 dict, 아니면 None."""
+    if df is None or len(df) < 60:
+        return None
+    c, h, l = df["Close"], df["High"], df["Low"]
+    ema20 = c.ewm(span=20, adjust=False).mean()
+    ema50 = c.ewm(span=50, adjust=False).mean()
+    adx = float(_adx14(df).iloc[-1])
+    price = float(c.iloc[-1]); e20 = float(ema20.iloc[-1])
+    uptrend = e20 > float(ema20.iloc[-6]) and price > float(ema50.iloc[-1])
+    near_ema = abs(price / e20 - 1) <= 0.02          # 20EMA 2% 이내 = 눌림 접촉
+    if adx >= 30 and uptrend and near_ema:
+        stop = float(l.tail(3).min())
+        target = float(h.tail(20).max())
+        return {"adx": adx, "ema20": e20, "price": price, "stop": stop, "target": target,
+                "risk_pct": ((price - stop) / price * 100) if price > stop else None}
+    return None
+
+
+def trend_template(df: pd.DataFrame, rs: float | None = None) -> dict | None:
+    """미너비니 추세 템플릿(일봉 근사). 통과 여부 + 세부 체크 리스트 반환. 주식용(크립토 제외)."""
+    c = df["Close"]
+    if len(c) < 210:
+        return None
+    ma50 = c.rolling(50).mean(); ma150 = c.rolling(150).mean(); ma200 = c.rolling(200).mean()
+    price = float(c.iloc[-1])
+    m50, m150, m200 = float(ma50.iloc[-1]), float(ma150.iloc[-1]), float(ma200.iloc[-1])
+    m200_prev = float(ma200.iloc[-21])
+    hi52 = float(c.tail(252).max()); lo52 = float(c.tail(252).min())
+    checks = [
+        ("가격 > 50·150·200일선", price > m50 and price > m150 and price > m200),
+        ("50 > 150 > 200 정배열", m50 > m150 > m200),
+        ("200일선 상승 중", m200 > m200_prev),
+        ("52주 저점 대비 +30%↑", price >= lo52 * 1.30),
+        ("52주 고점 -25% 이내", price >= hi52 * 0.75),
+    ]
+    if rs is not None:
+        checks.append(("상대강도 양호(지수 대비)", rs > 0))
+    return {"passed": all(v for _, v in checks), "checks": checks,
+            "n_pass": sum(v for _, v in checks), "n_total": len(checks)}
+
+
 def compute_metrics(df: pd.DataFrame, setup: dict, bench_ret: float | None = None) -> dict:
     price, stop, high = setup["price"], setup["stop"], setup["high"]
     r_mult = (high - price) / (price - stop) if price > stop else None

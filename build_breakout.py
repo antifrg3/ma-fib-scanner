@@ -177,7 +177,7 @@ def _sig(good, bad):
     return "sig-good" if good else ("sig-bad" if bad else "")
 
 
-def panel_html(c):
+def panel_html(c, extra=""):
     fp = lambda x: s.fmt_price(x, c["ticker"])
     pm = c["prior_move"]
     con = c["contraction"]
@@ -204,6 +204,7 @@ def panel_html(c):
         <div class="mrow"><span>상대강도(60일)</span><b class="{rs_cls}">{rs_txt}</b></div>
         <div class="mrow"><span>MA 정렬</span><b class="{ma_cls}">{ma_txt}</b></div>
         <div class="mrow"><span>포지션 사이징</span><b class="size-out">—</b></div>
+        {extra}
       </div>"""
 
 
@@ -213,6 +214,38 @@ def card_html(market, c):
     fp = lambda x: s.fmt_price(x, t)
     code_badge = f"<span class='code'>{t}</span>" if name != t else ""
     chart_rel = f"charts/bo_{market}_{t.replace('.', '_')}.png"
+
+    # ② 미너비니 추세 템플릿 (주식만)
+    tt_html = ""
+    if market != "crypto":
+        tt = s.trend_template(c.get("df"), c.get("rs"))
+        if tt:
+            mark = "✓ 통과" if tt["passed"] else f"✗ {tt['n_pass']}/{tt['n_total']}"
+            cls = "sig-good" if tt["passed"] else "sig-warn"
+            fails = " · ".join(lbl for lbl, ok in tt["checks"] if not ok)
+            detail = "" if tt["passed"] else f"<span class='tt-fail'>미충족: {fails}</span>"
+            tt_html = (f"<div class='mrow'><span>미너비니 추세 템플릿</span>"
+                       f"<b class='{cls}'>{mark}</b></div>{detail}")
+
+    # ③ 한국 가격제한폭(±30%) 근접 플래그
+    limit_html = ""
+    if market in ("kr", "kretf"):
+        df = c.get("df")
+        if df is not None and len(df) >= 2:
+            chg = (float(df["Close"].iloc[-1]) / float(df["Close"].iloc[-2]) - 1) * 100
+            if chg >= 22:
+                limit_html = ("<div class='limit-flag'>⚠️ 상한가(+30%) 근접 "
+                              f"(오늘 {chg:+.0f}%) — 자석효과로 추격 위험, 다음날 갭 주의</div>")
+            elif chg <= -22:
+                limit_html = ("<div class='limit-flag'>⚠️ 하한가(-30%) 근접 "
+                              f"(오늘 {chg:+.0f}%) — 청산 불가 위험</div>")
+
+    # ⑤ 크립토 펀딩비 정적 안내
+    funding_html = ""
+    if market == "crypto":
+        funding_html = ("<div class='fund-note'>ℹ️ 선물 레버리지 롱은 펀딩비(대략 +0.01~0.03%/8h)가 "
+                        "매일 누적돼 수익을 갉아먹습니다. 며칠 이상 보유 시 비용으로 반영하세요.</div>")
+
     return f"""
     <a class="card-link" href="{bs.chart_url(t)}" target="_blank" rel="noopener"
        data-entry="{c['pivot']:.4f}" data-stop="{c['stop']:.4f}">
@@ -222,12 +255,14 @@ def card_html(market, c):
         <div class="px"><span class="px-num">{fp(c['price'])}</span></div>
       </header>
       <div class="label">🚀 돌파 발생 — 오늘 피벗 상향</div>
+      {limit_html}
       <div class="levels">
         <div class="lv"><span>피벗(돌파선)</span><b>{fp(c['pivot'])}</b></div>
         <div class="lv"><span>진입 / 손절</span><b>{fp(c['pivot'])} / {fp(c['stop'])}</b></div>
         <div class="lv"><span>익절</span><b>3~5일 부분익절 → 손절 BE → MA 트레일</b></div>
       </div>
-      {panel_html(c)}
+      {panel_html(c, tt_html)}
+      {funding_html}
       <div class="plate"><img loading="lazy" src="{chart_rel}" alt="{name} chart"></div>
       <div class="open">TradingView에서 차트 열기 ↗</div>
     </article>
@@ -271,14 +306,17 @@ def section_html(market, results):
 
     cur = {"us": "USD", "kr": "KRW", "etf": "USD", "kretf": "KRW", "crypto": "USD"}.get(market, "USD")
     acct = {"us": "10000", "kr": "10000000", "etf": "10000", "kretf": "10000000", "crypto": "10000"}.get(market, "10000")
+    r = regime.regime_for_market(market)
+    risk_default, gate_banner = regime.sizing_hint(r, "breakout")
     sizer = (f"<div class='sizer'>포지션 사이징(피벗 진입 기준) — 계좌 "
              f"<input type='number' class='acct' value='{acct}'> · 리스크 "
-             f"<input type='number' class='risk' value='1' step='0.1'>% "
+             f"<input type='number' class='risk' value='{risk_default}' step='0.1'>% "
              f"<span class='cur'>({cur} · 1회 손실 한도)</span></div>")
 
     return f"""
     <section id="sec-{market}" class="market {active}">
-      {regime.badge_html(regime.regime_for_market(market), "breakout")}
+      {regime.badge_html(r, "breakout")}
+      {gate_banner}
       <div class="sec-meta">
         <span class="cnt"><b>{len(broke)}</b> 돌파 발생</span>
         <span class="cnt"><b>{len(forming)}</b> 셋업 형성</span>
