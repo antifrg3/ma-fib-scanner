@@ -26,7 +26,20 @@ BINANCE_BASES = ["https://data-api.binance.vision", "https://api.binance.com"]
 
 # 제외: 스테이블코인·법정화폐 토큰 (추세가 없음)
 _STABLE = {"USDC", "FDUSD", "TUSD", "BUSD", "DAI", "USDP", "USDD", "PYUSD",
-           "USTC", "EUR", "EURI", "AEUR", "GBP", "TRY", "BRL", "ARS", "ZAR"}
+           "USTC", "EUR", "EURI", "AEUR", "GBP", "TRY", "BRL", "ARS", "ZAR",
+           "USD1", "USDE", "USDX", "USDF", "USDB", "USDS", "USD0", "USR",
+           "GUSD", "LUSD", "SUSD", "CUSD", "EURC", "EURT", "XAUT", "PAXG"}
+
+
+def _is_stable(base: str) -> bool:
+    """스테이블코인 판별: 명시 목록 + 패턴(USD로 시작/끝). 새 스테이블도 자동 포착."""
+    b = base.upper()
+    if b in _STABLE:
+        return True
+    if b.startswith("USD") or b.endswith("USD"):
+        return True
+    return False
+
 # 제외: 래핑·스테이킹 파생 토큰 (원본과 중복)
 _WRAPPED = {"WBTC", "WETH", "WBETH", "WBNB", "BETH", "STETH", "WSTETH", "CBETH"}
 
@@ -160,7 +173,7 @@ def write_crypto(top_n: int = CRYPTO_TOP_N):
         if not sym.endswith("USDT"):
             continue
         base = sym[:-4]
-        if base in _STABLE or base in _WRAPPED or _is_leveraged(base):
+        if _is_stable(base) or base in _WRAPPED or _is_leveraged(base):
             continue
         try:
             qv = float(d.get("quoteVolume", 0))   # USDT 환산 거래대금

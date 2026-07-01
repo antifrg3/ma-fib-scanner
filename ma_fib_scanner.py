@@ -211,6 +211,18 @@ def _read_ticker_file(path: str) -> list[str]:
     return out
 
 
+def _is_stable_symbol(ticker: str) -> bool:
+    """USDT 페어 중 스테이블코인 판별(USD로 시작/끝 또는 알려진 목록)."""
+    t = ticker.upper()
+    if not t.endswith("USDT"):
+        return False
+    base = t[:-4]
+    if base.startswith("USD") or base.endswith("USD"):
+        return True
+    return base in {"DAI", "FDUSD", "TUSD", "BUSD", "PYUSD", "EUR", "EURI", "AEUR",
+                    "EURC", "EURT", "USTC", "PAXG", "XAUT"}
+
+
 def load_universe(market: str = "us") -> list[str]:
     """시장별 종목 목록. tickers_us/kr/crypto.txt 가 있으면 그걸 우선 사용."""
     here = os.path.dirname(os.path.abspath(__file__))
@@ -222,6 +234,7 @@ def load_universe(market: str = "us") -> list[str]:
     us = _read_ticker_file(us_file) if os.path.exists(us_file) else list(DEFAULT_UNIVERSE)
     kr = _read_ticker_file(kr_file) if os.path.exists(kr_file) else list(KR_UNIVERSE)
     cr = _read_ticker_file(cr_file) if os.path.exists(cr_file) else list(CRYPTO_UNIVERSE)
+    cr = [t for t in cr if not _is_stable_symbol(t)]   # 스테이블코인 안전망 제외
     etf = _read_ticker_file(etf_file) if os.path.exists(etf_file) else list(ETF_UNIVERSE)
     kretf = _read_ticker_file(kretf_file) if os.path.exists(kretf_file) else list(KR_ETF_UNIVERSE)
     if market == "kr":
