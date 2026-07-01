@@ -2,14 +2,15 @@
 """
 ma_fib_scanner.py
 ─────────────────────────────────────────────────────────────────────────
-일봉 200선 + 4시간봉 200선 '골든크로스' 후, 피보나치 되돌림 눌림목 구간에
+일봉 '빠른선 × 느린선' 골든크로스 후, 피보나치 되돌림 눌림목 구간에
 들어온 종목을 찾아 차트를 그려 이메일로 보내주는 스캐너.
 
-전략 출처: 사용자가 제공한 매매법 문서.
-  - 조건1: 4시간봉 200선이 일봉 200선을 상향 돌파(골든크로스), 최근 N일 이내
+전략 출처: 사용자 매매법 문서 + 자체 백테스트 최적화.
+  - 조건1: 일봉 빠른선이 느린선을 상향 돌파(골든크로스), 최근 N일 이내
+           시장별 최적(백테스트 검증): 미국 100×200 · 한국 50×200 · 크립토 30×150
   - 조건2: 크로스 이전 저점 ~ 이후 최근 고점으로 피보나치 되돌림
   - 조건3: 현재가가 0.382~0.618 눌림목 구간(분할매수 구간)에 위치
-  - 대상: 나스닥100 / 대형주 등 건실한 종목 (기본 유니버스로 한정)
+  - 대상: 나스닥100 / 코스피 / 크립토 등 (시장별 유니버스)
 
 ⚠️ 이 스크립트는 '조건에 맞는 후보를 찾아 차트로 보여주는 스크리너'다.
    매매 권유나 투자 조언이 아니며, 진입·손절·익절 판단은 전적으로 본인 몫이다.
@@ -126,6 +127,16 @@ def is_crypto(ticker: str) -> bool:
     return ticker.upper().endswith("USDT")
 
 
+def ma_lengths_for(ticker: str) -> tuple[int, int]:
+    """티커 시장별 골든크로스 (빠른선, 느린선) — 백테스트 검증값.
+       크립토 30×150(0.593R) · 한국 50×200(0.154R) · 미국 100×200(0.514R)."""
+    if is_crypto(ticker):
+        return 30, 150
+    if is_krw(ticker):
+        return 50, 200
+    return 100, 200        # 미국(및 기타)
+
+
 def display_name(ticker: str) -> str:
     if is_crypto(ticker):
         return _FILE_NAMES.get(ticker.upper(), ticker[:-4])  # BTCUSDT → BTC
@@ -147,10 +158,15 @@ def fmt_price(price: float, ticker: str) -> str:
 
 @dataclass
 class Config:
-    # --- 이동평균 ---
-    daily_ma: int = 200            # 일봉 200선
-    intraday_ma: int = 200         # 4시간봉 200선
-    intraday_interval: str = "4h"  # yfinance에서 1h 받아 4h로 리샘플
+    # --- 이동평균 (골든크로스: 일봉 빠른선 × 느린선) ---
+    # 백테스트 검증 최적 조합(진입 신호로서 눌림목 기대값 최대):
+    #   미국 100×200(0.514R) · 한국 50×200(0.154R) · 크립토 30×150(0.593R)
+    # 시장별 값은 config_for_market()에서 주입. 아래는 기본(미국).
+    fast_ma: int = 100             # 일봉 빠른선(크로스 상단)
+    daily_ma: int = 200            # 일봉 느린선(크로스 하단)
+    intraday_ma: int = 200         # (레거시 유지: 폴백/차트용)
+    intraday_interval: str = "4h"  # (레거시)
+    use_intraday: bool = False     # False = 일봉 크로스만 사용(4h 미사용)
 
     # --- 골든크로스 신선도: 최근 N 거래일 이내 발생한 크로스만 유효 ---
     gc_lookback_days: int = 120
@@ -323,29 +339,29 @@ def fetch_4h_crypto(symbol: str) -> pd.DataFrame | None:
 
 
 def get_data(ticker: str, cfg: "Config"):
-    """시장에 맞는 (일봉, 4시간봉) 데이터를 반환."""
+    """시장에 맞는 (일봉, 4시간봉) 데이터를 반환.
+       일봉 크로스 방식(use_intraday=False)에서는 4h를 받지 않음(속도·안정성)."""
     if cfg.market == "crypto" or is_crypto(ticker):
-        return fetch_daily_crypto(ticker), fetch_4h_crypto(ticker)
-    return fetch_daily(ticker, cfg.daily_period), fetch_intraday_4h(ticker)
+        daily = fetch_daily_crypto(ticker)
+        four = fetch_4h_crypto(ticker) if cfg.use_intraday else None
+        return daily, four
+    daily = fetch_daily(ticker, cfg.daily_period)
+    four = fetch_intraday_4h(ticker) if cfg.use_intraday else None
+    return daily, four
 
 
-def attach_indicators(daily: pd.DataFrame, four: pd.DataFrame | None, cfg: Config) -> pd.DataFrame:
-    """일봉 프레임에 일봉200MA, (정렬된) 4h200MA 컬럼을 붙인다."""
+def attach_indicators(daily: pd.DataFrame, four: pd.DataFrame | None, cfg: Config,
+                      ticker: str = "") -> pd.DataFrame:
+    """골든크로스용 두 이평을 붙인다.
+       ma_daily     = 일봉 '느린선'(크로스 하단)
+       ma_intraday  = 일봉 '빠른선'(크로스 상단) — 컬럼명은 하위호환 위해 유지.
+       시장별 최적(빠른선×느린선)은 ma_lengths_for()에서 결정(백테스트 검증)."""
     df = daily.copy()
-    df["ma_daily"] = df["Close"].rolling(cfg.daily_ma).mean()
-
-    if four is not None and len(four) >= cfg.intraday_ma:
-        ma4 = four["Close"].rolling(cfg.intraday_ma).mean().dropna()
-        ma4 = ma4.sort_index()
-        # 각 일봉 종가 시점 기준, 그 날까지의 마지막 4h-200MA 값을 가져옴
-        left = pd.DataFrame({"date": df.index + pd.Timedelta(hours=23, minutes=59)})
-        right = pd.DataFrame({"date": ma4.index, "ma_intraday": ma4.values}).sort_values("date")
-        merged = pd.merge_asof(left.sort_values("date"), right, on="date", direction="backward")
-        df["ma_intraday"] = merged["ma_intraday"].values
-    else:
-        # 4h 데이터가 부족하면: 4시간봉 200선 ≈ 약 100 거래일 일봉MA로 근사(폴백)
-        df["ma_intraday"] = df["Close"].rolling(100).mean()
-
+    fast, slow = ma_lengths_for(ticker) if ticker else (cfg.fast_ma, cfg.daily_ma)
+    df["ma_daily"] = df["Close"].rolling(slow).mean()      # 느린선
+    df["ma_intraday"] = df["Close"].rolling(fast).mean()   # 빠른선
+    df.attrs["fast_ma"] = fast
+    df.attrs["slow_ma"] = slow
     return df
 
 
@@ -590,7 +606,9 @@ def render_chart(ticker: str, df: pd.DataFrame, setup: dict, label: str, cfg: Co
         ax.text(cx, plot["High"].max(), "GC", fontsize=9, color="#ff7f0e", ha="center", va="bottom")
 
     # 차트 제목은 폰트 없는 서버에서도 깨지지 않도록 ASCII만 사용
-    ax.set_title(f"{ticker}   retrace {setup['r_now']*100:.0f}%   price {fmt_price(setup['price'], ticker)}   (MA200d=blue, MA200/4h=orange)",
+    _fast = df.attrs.get("fast_ma", 100)
+    _slow = df.attrs.get("slow_ma", 200)
+    ax.set_title(f"{ticker}   retrace {setup['r_now']*100:.0f}%   price {fmt_price(setup['price'], ticker)}   (MA{_slow}=blue, MA{_fast}=orange)",
                  fontsize=11, loc="left")
 
     buf = io.BytesIO()
@@ -606,9 +624,10 @@ def render_chart(ticker: str, df: pd.DataFrame, setup: dict, label: str, cfg: Co
 
 def scan_one(ticker: str, cfg: Config, bench_ret: float | None = None) -> dict | None:
     daily, four = get_data(ticker, cfg)
-    if daily is None or len(daily) < cfg.daily_ma + 5:
+    fast, slow = ma_lengths_for(ticker)
+    if daily is None or len(daily) < slow + 5:
         return None
-    df = attach_indicators(daily, four, cfg)
+    df = attach_indicators(daily, four, cfg, ticker)
 
     cross = find_recent_golden_cross(df, cfg)
     if cross is None:
