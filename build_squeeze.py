@@ -95,6 +95,10 @@ def card_html(market: str, c: dict) -> str:
     chart_rel = f"charts/sq_{market}_{t.replace('.', '_')}.png"
     fired = ("압축 중" if st.status == "squeeze_on"
              else f"{st.fired_bars_ago}일 전 해제")
+    # 차트는 돌파(fired) 상태만 생성됨 → 압축 중엔 img 태그 생략(깨짐 방지)
+    has_chart = st.status in ("fired_long", "fired_short")
+    img_html = (f'<a class="card-link" href="{bs.chart_url(t)}" target="_blank" rel="noopener">'
+                f'<img loading="lazy" src="{chart_rel}" alt="{name}"></a>') if has_chart else ""
     return f"""
     <div class="card">
       <div class="card-head">
@@ -107,9 +111,7 @@ def card_html(market: str, c: dict) -> str:
         <span>압축순위 <b>{st.ribbon_pctile:.0f}퍼센타일</b></span>
         <span>{fired}</span>
       </div>
-      <a class="card-link" href="{bs.chart_url(t)}" target="_blank" rel="noopener">
-        <img loading="lazy" src="{chart_rel}" alt="{name}">
-      </a>
+      {img_html}
       <div class="card-foot">
         <a class="card-link" href="{bs.chart_url(t)}" target="_blank" rel="noopener">
           TradingView에서 차트 열기 ↗</a>

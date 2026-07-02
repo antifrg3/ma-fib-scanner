@@ -263,7 +263,7 @@ def card_html(market, c):
       </div>
       {panel_html(c, tt_html)}
       {funding_html}
-      <div class="plate"><img loading="lazy" src="{chart_rel}" alt="{name} chart"></div>
+      {(f'<div class="plate"><img loading="lazy" src="{chart_rel}" alt="{name} chart"></div>') if c.get("img") else ""}
       <div class="open">TradingView에서 차트 열기 ↗</div>
     </article>
     </a>"""

@@ -138,7 +138,7 @@ def card_html(market: str, c: dict) -> str:
         <div class="lv"><span>골든크로스</span><b>{str(s_['cross_date']).split(' ')[0]}</b></div>
       </div>
       {metrics_html(c)}
-      <div class="plate"><img loading="lazy" src="{chart_rel}" alt="{name} chart"></div>
+      {(f'<div class="plate"><img loading="lazy" src="{chart_rel}" alt="{name} chart"></div>') if c.get("img") else ""}
       <div class="open">TradingView에서 차트 열기 ↗</div>
     </article>
     </a>"""
