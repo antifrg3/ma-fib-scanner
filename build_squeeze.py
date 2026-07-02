@@ -74,8 +74,10 @@ def render_chart(ticker: str, df: pd.DataFrame, st: sq.SqueezeState) -> bytes:
     fig, axes = mpf.plot(d, type="candle", style=style, addplot=adds,
                          figsize=(7.6, 4.0), returnfig=True, volume=False,
                          tight_layout=True, xrotation=0, datetime_format="%m/%d")
-    lab, sub = sq.STATUS_LABEL[st.status]
-    axes[0].set_title(f"{ticker}   {lab}   RSI {st.rsi:.0f}   리본폭 {st.ribbon_width_pct:.2f}% "
+    # 차트 제목은 폰트 없는 서버에서 한글이 깨지므로 ASCII만 사용
+    ascii_status = {"fired_long": "LONG breakout", "fired_short": "SHORT breakout",
+                    "squeeze_on": "SQUEEZE on", "none": "-"}.get(st.status, "-")
+    axes[0].set_title(f"{ticker}   {ascii_status}   RSI {st.rsi:.0f}   width {st.ribbon_width_pct:.2f}% "
                       f"(BB=yellow dash, KC=gray)", fontsize=10, loc="left", color="#e8e8ee")
     fig.savefig(buf, format="png", dpi=110, bbox_inches="tight", facecolor="#0e0e12")
     plt.close(fig)
@@ -88,13 +90,15 @@ def card_html(market: str, c: dict) -> str:
     st = c["state"]
     lab, sub = sq.STATUS_LABEL[st.status]
     cls = sq.STATUS_CLS[st.status]
+    name = s.display_name(t)
+    code_badge = f"<span class='code'>{t}</span>" if name != t else ""
     chart_rel = f"charts/sq_{market}_{t.replace('.', '_')}.png"
     fired = ("압축 중" if st.status == "squeeze_on"
              else f"{st.fired_bars_ago}일 전 해제")
     return f"""
     <div class="card">
       <div class="card-head">
-        <span class="tk">{t}</span>
+        <span class="tk">{name}</span>{code_badge}
         <span class="sq-badge {cls}">{lab}</span>
       </div>
       <div class="sq-meta">
@@ -104,7 +108,7 @@ def card_html(market: str, c: dict) -> str:
         <span>{fired}</span>
       </div>
       <a class="card-link" href="{bs.chart_url(t)}" target="_blank" rel="noopener">
-        <img loading="lazy" src="{chart_rel}" alt="{t}">
+        <img loading="lazy" src="{chart_rel}" alt="{name}">
       </a>
       <div class="card-foot">
         <a class="card-link" href="{bs.chart_url(t)}" target="_blank" rel="noopener">
