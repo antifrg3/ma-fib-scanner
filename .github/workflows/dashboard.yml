@@ -46,6 +46,9 @@ jobs:
       - name: Build breakout page
         run: python build_breakout.py
 
+      - name: Build squeeze page
+        run: python build_squeeze.py
+
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -447,6 +447,7 @@ def nav_html(active: str) -> str:
     return ('<div class="nav">'
             + a("index.html", "📉 눌림목", "pullback")
             + a("breakout.html", "🚀 돌파", "breakout")
+            + a("squeeze.html", "🎯 스퀴즈", "squeeze")
             + '</div>')
 
 
