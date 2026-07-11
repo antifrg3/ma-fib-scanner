@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-build_alignment.py — 크립토 1시간봉 정배열/역배열 스캐너 → site/alignment.html
+build_alignment.py — 크립토 일봉 정배열/역배열 스캐너 → site/alignment.html
 ─────────────────────────────────────────────────────────────────────────
 20>50>100>200 정배열(상승) / 20<50<100<200 역배열(하락) 코인을 찾아
-정렬 강도순으로 보여준다. 크립토 전용·1시간봉.
+정렬 강도순으로 보여준다. 크립토 전용·일봉.
 갱신: 6시간마다(별도 워크플로우). 데이터·차트·HTML 뼈대 재활용.
 """
 import io
@@ -23,10 +23,10 @@ import build_site as bs
 import alignment as al
 
 
-# ── 1시간봉 수집 ───────────────────────────────────────────────────────────
-def fetch_1h(symbol: str) -> pd.DataFrame | None:
+# ── 일봉 수집 ──────────────────────────────────────────────────────────────
+def fetch_daily(symbol: str) -> pd.DataFrame | None:
     try:
-        return s._klines_to_df(s._binance_klines(symbol, "1h", 1000))
+        return s._klines_to_df(s._binance_klines(symbol, "1d", 1000))
     except Exception:
         return None
 
@@ -36,7 +36,7 @@ def scan():
     out = []
     for t in s.load_universe("crypto"):
         try:
-            df = fetch_1h(t)
+            df = fetch_daily(t)
             if df is None or len(df) < 210:
                 continue
             st = al.compute_alignment(df)
@@ -66,7 +66,7 @@ def render_chart(ticker: str, df: pd.DataFrame, st: al.AlignState) -> bytes:
     buf = io.BytesIO()
     fig, axes = mpf.plot(d, type="candle", style=style, addplot=adds,
                          figsize=(7.6, 4.0), returnfig=True, volume=False,
-                         tight_layout=True, xrotation=0, datetime_format="%m/%d %Hh")
+                         tight_layout=True, xrotation=0, datetime_format="%m/%d")
     ascii_status = "BULL stack" if st.status == "bull" else "BEAR stack"
     axes[0].set_title(f"{ticker}  {ascii_status}  strength {st.strength:.1f}%  RSI {st.rsi:.0f}  "
                       f"(EMA 20/50/100/200)", fontsize=10, loc="left", color="#e8e8ee")
@@ -128,7 +128,7 @@ def page_html(stamp, bull, bear):
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="dark">
-<title>정배열 스캐너 · 크립토 1시간봉</title>
+<title>정배열 스캐너 · 크립토 일봉</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>{bs.CSS}{ALIGN_CSS}</style>
@@ -136,7 +136,7 @@ def page_html(stamp, bull, bear):
 <div class="wrap">
   <div class="top">
     <h1 class="brand">정배열 스캐너<span class="dot">.</span></h1>
-    <span class="sub">크립토 · 1시간봉 · EMA 20/50/100/200 정렬</span>
+    <span class="sub">크립토 · 일봉 · EMA 20/50/100/200 정렬</span>
     <span class="stamp">갱신 <b>{stamp}</b> KST</span>
   </div>
 
@@ -148,7 +148,7 @@ def page_html(stamp, bull, bear):
   <div class="how">
     <b>어떻게 보나</b> · 🟢 정배열 = EMA 20&gt;50&gt;100&gt;200 (단기가 위, 상승 추세) ·
     🔴 역배열 = 20&lt;50&lt;100&lt;200 (하락 추세) · 정렬강도 = 이평 간 벌어진 정도(추세 강도) ·
-    강도 높은 순 정렬. 1시간봉이라 6시간마다 갱신됩니다.
+    강도 높은 순 정렬. 일봉 기준이라 하루 1회 갱신됩니다.
   </div>
   <div class="foot">
     정배열/역배열은 '추세 방향'을 보여주는 것이지 매수·매도 신호가 아닙니다.
