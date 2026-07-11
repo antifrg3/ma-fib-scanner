@@ -69,6 +69,12 @@ def top_symbols(n: int = 100) -> list[str]:
 
 def fetch_closes(symbol: str, days: int = 120) -> pd.Series | None:
     """일봉 종가 시리즈(최근 days+ 개)."""
+    df = fetch_ohlc(symbol, days)
+    return df["Close"] if df is not None else None
+
+
+def fetch_ohlc(symbol: str, days: int = 120) -> pd.DataFrame | None:
+    """일봉 OHLC DataFrame(최근 days+ 개). 정배열 차트용."""
     for base_url in BINANCE_BASES:
         try:
             url = (f"{base_url}/api/v3/klines?symbol={symbol}"
@@ -78,7 +84,12 @@ def fetch_closes(symbol: str, days: int = 120) -> pd.Series | None:
                 d = json.loads(r.read().decode())
             if isinstance(d, list) and len(d) >= 30:
                 idx = pd.to_datetime([k[0] for k in d], unit="ms")
-                return pd.Series([float(k[4]) for k in d], index=idx)
+                return pd.DataFrame({
+                    "Open": [float(k[1]) for k in d],
+                    "High": [float(k[2]) for k in d],
+                    "Low": [float(k[3]) for k in d],
+                    "Close": [float(k[4]) for k in d],
+                }, index=idx)
         except Exception:
             continue
     return None
@@ -105,6 +116,7 @@ class OutperformState:
     beats_btc30: bool
     beats_btc90: bool
     closes: pd.Series
+    df: pd.DataFrame          # OHLC (정배열 차트용)
 
 
 def scan_outperformers(top_n: int = 100):
@@ -123,9 +135,10 @@ def scan_outperformers(top_n: int = 100):
     for sym in syms:
         if sym == "BTCUSDT":
             continue
-        closes = fetch_closes(sym, 120)
-        if closes is None:
+        df = fetch_ohlc(sym, 120)
+        if df is None:
             continue
+        closes = df["Close"]
         r30 = _ret(closes, 30)
         r90 = _ret(closes, 90)
         if r30 is None and r90 is None:
@@ -136,6 +149,6 @@ def scan_outperformers(top_n: int = 100):
             symbol=sym, ret30=r30, ret90=r90, excess30=e30, excess90=e90,
             beats_btc30=(e30 is not None and e30 > 0),
             beats_btc90=(e90 is not None and e90 > 0),
-            closes=closes,
+            closes=closes, df=df,
         ))
     return btc30, btc90, out

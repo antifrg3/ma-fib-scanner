@@ -16,9 +16,11 @@ import pandas as pd
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import mplfinance as mpf
 
 import build_site as bs
 import outperform as op
+import alignment as al
 
 SCAN_TOP = 100    # 바이낸스 거래대금 상위 N개 스캔
 SHOW_TOP = 30     # 표시할 상위 N개(초과수익 순)
@@ -28,23 +30,32 @@ def _ma(s, n):
     return s.rolling(n).mean()
 
 
-# ── 차트: 종가선 + BTC 대비 상대강도 ──────────────────────────────────────
+# ── 차트: 캔들 + EMA 20/50/100/200 (정배열 확인) ──────────────────────────
 def render_chart(st: op.OutperformState, period_days: int) -> bytes:
-    closes = st.closes.tail(period_days + 5)
-    fig, ax = plt.subplots(figsize=(7.2, 3.4), facecolor="#0e0e12")
-    ax.set_facecolor("#0e0e12")
-    ax.plot(closes.index, closes.values, color="#4fc3d2", linewidth=1.6)
-    ax.fill_between(closes.index, closes.values, closes.min(),
-                    color="#4fc3d2", alpha=0.08)
-    e = st.excess30 if period_days == 30 else st.excess90
-    r = st.ret30 if period_days == 30 else st.ret90
-    ax.set_title(f"{st.symbol}   {period_days}d return {r:+.1f}%   vs BTC {e:+.1f}%p",
-                 fontsize=10, loc="left", color="#e8e8ee")
-    ax.tick_params(colors="#888", labelsize=8)
-    for sp in ax.spines.values():
-        sp.set_color("#1c1c24")
-    ax.grid(True, color="#1c1c24", linewidth=0.5)
+    bars = period_days + 10
+    d = st.df.tail(bars).copy()
+    c = st.df["Close"]
+    cols = {20: "#4fc3d2", 50: "#7e9cff", 100: "#c77dff", 200: "#fe0d5f"}
+    adds = []
+    for n in al.MAS:
+        ema = c.ewm(span=n, adjust=False).mean().tail(bars)
+        adds.append(mpf.make_addplot(ema, color=cols[n], width=1.0))
+    mc = mpf.make_marketcolors(up="#26a69a", down="#ef5350", edge="inherit",
+                               wick="inherit", volume="in")
+    style = mpf.make_mpf_style(base_mpf_style="nightclouds", marketcolors=mc,
+                               facecolor="#0e0e12", edgecolor="#0e0e12",
+                               figcolor="#0e0e12", gridcolor="#1c1c24")
     buf = io.BytesIO()
+    fig, axes = mpf.plot(d, type="candle", style=style, addplot=adds,
+                         figsize=(7.6, 4.0), returnfig=True, volume=False,
+                         tight_layout=True, xrotation=0, datetime_format="%m/%d")
+    r = st.ret30 if period_days == 30 else st.ret90
+    e = st.excess30 if period_days == 30 else st.excess90
+    astat = al.compute_alignment(st.df)
+    astr = ("BULL" if astat and astat.status == "bull"
+            else "BEAR" if astat and astat.status == "bear" else "MIX")
+    axes[0].set_title(f"{st.symbol}  {period_days}d {r:+.1f}%  vs BTC {e:+.1f}%p  [{astr}]  "
+                      f"(EMA 20/50/100/200)", fontsize=10, loc="left", color="#e8e8ee")
     fig.savefig(buf, format="png", dpi=110, bbox_inches="tight", facecolor="#0e0e12")
     plt.close(fig)
     return buf.getvalue()
@@ -57,11 +68,19 @@ def card_html(st: op.OutperformState, period: str) -> str:
     e = st.excess30 if period == "30" else st.excess90
     chart_rel = f"charts/op{period}_{t.replace('.', '_')}.png"
     ecls = "op-pos" if (e or 0) > 0 else "op-neg"
+    # 정배열 상태
+    astat = al.compute_alignment(st.df)
+    if astat:
+        alab, _ = al.STATUS_LABEL[astat.status]
+        acls = al.STATUS_CLS[astat.status]
+    else:
+        alab, acls = "⚪ 혼조", "al-mixed"
     return f"""
     <div class="card">
       <div class="card-head">
         <span class="tk">{t}</span>
         <span class="op-badge {ecls}">BTC 대비 {e:+.1f}%p</span>
+        <span class="al-badge {acls}">{alab}</span>
       </div>
       <div class="op-meta">
         <span>{period}일 수익률 <b>{r:+.1f}%</b></span>
@@ -79,6 +98,8 @@ def card_html(st: op.OutperformState, period: str) -> str:
 OP_CSS = """
 .op-badge{padding:3px 10px;border-radius:6px;font-weight:700;font-size:13px;color:#fff}
 .op-pos{background:#1b7a4b}.op-neg{background:#b23a3a}
+.al-badge{padding:3px 10px;border-radius:6px;font-weight:700;font-size:13px;color:#fff}
+.al-bull{background:#1b7a4b}.al-bear{background:#b23a3a}.al-mixed{background:#555}
 .op-meta{display:flex;flex-wrap:wrap;gap:12px;font-size:13px;color:#b8b8c4;margin:6px 0 10px}
 .op-meta b{color:#e8e8ee}
 .op-h{margin:22px 0 10px;font-size:16px;color:#e8e8ee;font-weight:700}
@@ -88,6 +109,7 @@ OP_CSS = """
 .op-tabs button{padding:7px 16px;border-radius:8px;border:1px solid #2a2a34;background:#16161c;
   color:#c8c8d0;font-weight:600;cursor:pointer;font-size:14px}
 .op-tabs button.on{background:#4fc3d2;color:#0a0a0e;border-color:#4fc3d2}
+.card-head{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .empty{color:#888;padding:24px;text-align:center}
 """
 
@@ -160,8 +182,8 @@ def page_html(stamp, top30, top90, n30, n90, scanned):
 
   <div class="how">
     <b>어떻게 보나</b> · 바이낸스 거래대금 상위 {scanned}개 중 최근 30·90일 <b>BTC보다 많이 오른</b>
-    코인을 초과수익 순으로. 정배열 스캐너(이평 정렬)가 놓치는 '갓 오르기 시작한 알트'까지 포착.
-    상단 배너의 개수로 지금이 알트 볼 때인지(많으면 알트시즌) 판단.
+    코인을 초과수익 순으로. 각 카드에 <b>정배열/역배열 배지 + EMA 20/50/100/200 차트</b>로 추세 정렬까지 확인.
+    BTC를 이겼는데(강세) 정배열이면(추세 확인) 더 강한 후보. 상단 배너 개수로 알트시즌 판단.
   </div>
   <div class="foot">
     BTC 대비 강세는 '상대 성과'지 매수 신호가 아닙니다. 이미 많이 오른 코인은 되돌림 위험이 큽니다.
