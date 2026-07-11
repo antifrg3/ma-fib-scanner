@@ -449,6 +449,7 @@ def nav_html(active: str) -> str:
             + a("breakout.html", "🚀 돌파", "breakout")
             + a("squeeze.html", "🎯 스퀴즈", "squeeze")
             + a("alignment.html", "📊 정배열", "alignment")
+            + a("outperform.html", "🔥 BTC강세", "outperform")
             + '</div>')
 
 
