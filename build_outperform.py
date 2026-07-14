@@ -96,6 +96,7 @@ def card_html(st: op.OutperformState, period: str) -> str:
 
 
 OP_CSS = """
+.card img{display:block;width:100%;height:auto;border-radius:6px;margin:4px 0}
 .op-badge{padding:3px 10px;border-radius:6px;font-weight:700;font-size:13px;color:#fff}
 .op-pos{background:#1b7a4b}.op-neg{background:#b23a3a}
 .al-badge{padding:3px 10px;border-radius:6px;font-weight:700;font-size:13px;color:#fff}

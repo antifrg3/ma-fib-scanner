@@ -150,6 +150,7 @@ def section_html(market: str, results: list) -> str:
 
 
 SQUEEZE_CSS = """
+.card img{display:block;width:100%;height:auto;border-radius:6px;margin:4px 0}
 .sq-badge{padding:3px 10px;border-radius:6px;font-weight:700;font-size:13px;color:#fff}
 .sq-long{background:#1b7a4b}.sq-short{background:#b23a3a}
 .sq-wait{background:#b8862b}.sq-none{background:#555}

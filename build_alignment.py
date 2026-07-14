@@ -40,7 +40,10 @@ def scan():
             if df is None or len(df) < 210:
                 continue
             st = al.compute_alignment(df)
-            if st is None or st.status == "mixed":
+            if st is None:
+                continue
+            # 정배열/역배열 + 단계 있는 혼조(🌱초기·🌿진행)도 포함
+            if st.status == "mixed" and st.stage not in ("early", "building"):
                 continue
             out.append({"ticker": t, "state": st, "df": df})
         except Exception:
@@ -84,16 +87,25 @@ def card_html(c: dict) -> str:
     chart_rel = f"charts/al_{t.replace('.', '_')}.png"
     pos = ("현재가 모든 이평 위" if st.above_all
            else "현재가 모든 이평 아래" if st.below_all else "이평 사이")
+    # 단계 배지(상승 방향일 때)
+    stage_badge = ""
+    if st.stage:
+        slab, _ = al.STAGE_LABEL[st.stage]
+        scls = al.STAGE_CLS[st.stage]
+        stage_badge = f'<span class="al-badge {scls}">{slab}</span>'
+    cross_info = (f"<span>20×50 크로스 <b>{st.cross_days_ago}일 전</b></span>"
+                  if st.cross_days_ago >= 0 and st.stage == "early" else "")
     return f"""
     <div class="card">
       <div class="card-head">
         <span class="tk">{t}</span>
-        <span class="al-badge {cls}">{lab}</span>
+        {stage_badge if stage_badge else f'<span class="al-badge {cls}">{lab}</span>'}
       </div>
       <div class="al-meta">
         <span>정렬강도 <b>{st.strength:.1f}%</b></span>
         <span>RSI <b>{st.rsi:.0f}</b></span>
         <span>{pos}</span>
+        {cross_info}
       </div>
       <a class="card-link" href="{bs.chart_url(t)}" target="_blank" rel="noopener">
         <img loading="lazy" src="{chart_rel}" alt="{t}"></a>
@@ -105,8 +117,10 @@ def card_html(c: dict) -> str:
 
 
 ALIGN_CSS = """
+.card img{display:block;width:100%;height:auto;border-radius:6px;margin:4px 0}
 .al-badge{padding:3px 10px;border-radius:6px;font-weight:700;font-size:13px;color:#fff}
 .al-bull{background:#1b7a4b}.al-bear{background:#b23a3a}.al-mixed{background:#555}
+.st-early{background:#2e7d32}.st-building{background:#558b2f}.st-full{background:#1b5e20}
 .al-meta{display:flex;flex-wrap:wrap;gap:12px;font-size:13px;color:#b8b8c4;margin:6px 0 10px}
 .al-meta b{color:#e8e8ee}
 .al-h{margin:20px 0 10px;font-size:16px;color:#e8e8ee;font-weight:700}
@@ -114,15 +128,18 @@ ALIGN_CSS = """
 """
 
 
-def page_html(stamp, bull, bear):
-    def grid(items):
-        return "".join(card_html(c) for c in items)
-    bull_block = (f"<h3 class='al-h'>🟢 정배열 (상승 추세) <span class='mono'>{len(bull)}</span></h3>"
-                  f"<div class='grid'>{grid(bull)}</div>") if bull else \
-                 "<h3 class='al-h'>🟢 정배열</h3><div class='empty'>정배열 코인이 없습니다.</div>"
-    bear_block = (f"<h3 class='al-h'>🔴 역배열 (하락 추세) <span class='mono'>{len(bear)}</span></h3>"
-                  f"<div class='grid'>{grid(bear)}</div>") if bear else \
-                 "<h3 class='al-h'>🔴 역배열</h3><div class='empty'>역배열 코인이 없습니다.</div>"
+def page_html(stamp, early, building, full, bear):
+    def block(title, items, empty_msg):
+        if items:
+            cards = "".join(card_html(c) for c in items)
+            return (f"<h3 class='al-h'>{title} <span class='mono'>{len(items)}</span></h3>"
+                    f"<div class='grid'>{cards}</div>")
+        return f"<h3 class='al-h'>{title}</h3><div class='empty'>{empty_msg}</div>"
+
+    early_block = block("🌱 초기 전환 (20×50 크로스 직후 — 시작점 후보)", early, "초기 전환 코인이 없습니다.")
+    building_block = block("🌿 진행 중 (20>50>100 — 정배열 형성 중)", building, "진행 중 코인이 없습니다.")
+    full_block = block("🌳 정배열 완성 (20>50>100>200)", full, "완성 정배열 코인이 없습니다.")
+    bear_block = block("🔴 역배열 (하락 추세)", bear, "역배열 코인이 없습니다.")
     return f"""<!doctype html>
 <html lang="ko"><head>
 <meta charset="utf-8">
@@ -142,13 +159,15 @@ def page_html(stamp, bull, bear):
 
   {bs.nav_html("alignment")}
 
-  {bull_block}
+  {early_block}
+  {building_block}
+  {full_block}
   {bear_block}
 
   <div class="how">
-    <b>어떻게 보나</b> · 🟢 정배열 = EMA 20&gt;50&gt;100&gt;200 (단기가 위, 상승 추세) ·
-    🔴 역배열 = 20&lt;50&lt;100&lt;200 (하락 추세) · 정렬강도 = 이평 간 벌어진 정도(추세 강도) ·
-    강도 높은 순 정렬. 일봉 기준이라 하루 1회 갱신됩니다.
+    <b>어떻게 보나</b> · 정배열은 순서대로 완성됩니다: 🌱 <b>초기</b>(20×50 골든크로스 직후 — 시작점,
+    단 가짜 전환 위험도 큼) → 🌿 <b>진행</b>(20&gt;50&gt;100) → 🌳 <b>완성</b>(20&gt;50&gt;100&gt;200, 확실하지만 늦음).
+    시작점을 노리면 🌱, 확인된 추세를 원하면 🌳. 🔴 역배열 = 하락 추세. 일봉 · 하루 1회 갱신.
   </div>
   <div class="foot">
     정배열/역배열은 '추세 방향'을 보여주는 것이지 매수·매도 신호가 아닙니다.
@@ -162,22 +181,28 @@ def page_html(stamp, bull, bear):
 def main():
     os.makedirs(bs.CHARTS, exist_ok=True)
     results = scan()
-    bull = sorted([c for c in results if c["state"].status == "bull"],
+    # 단계별 그룹 — 초기는 크로스 최신순, 나머지는 강도순
+    early = sorted([c for c in results if c["state"].stage == "early"],
+                   key=lambda c: c["state"].cross_days_ago)
+    building = sorted([c for c in results if c["state"].stage == "building"],
+                      key=lambda c: -c["state"].strength)
+    full = sorted([c for c in results if c["state"].stage == "full"],
                   key=lambda c: -c["state"].strength)
     bear = sorted([c for c in results if c["state"].status == "bear"],
                   key=lambda c: -c["state"].strength)
 
-    for c in bull + bear:
+    for c in early + building + full + bear:
         img = render_chart(c["ticker"], c["df"], c["state"])
         fn = f"al_{c['ticker'].replace('.', '_')}.png"
         with open(os.path.join(bs.CHARTS, fn), "wb") as f:
             f.write(img)
 
     stamp = datetime.now(bs.KST).strftime("%Y-%m-%d %H:%M")
-    html = page_html(stamp, bull, bear)
+    html = page_html(stamp, early, building, full, bear)
     with open(os.path.join(bs.SITE, "alignment.html"), "w", encoding="utf-8") as f:
         f.write(html)
-    print(f"✅ {bs.SITE}/alignment.html (정배열 {len(bull)} · 역배열 {len(bear)})")
+    print(f"✅ {bs.SITE}/alignment.html "
+          f"(🌱초기 {len(early)} · 🌿진행 {len(building)} · 🌳완성 {len(full)} · 역배열 {len(bear)})")
 
 
 if __name__ == "__main__":

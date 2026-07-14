@@ -26,6 +26,11 @@ class AlignState:
     above_all: bool    # 현재가가 모든 이평 위
     below_all: bool    # 현재가가 모든 이평 아래
     rsi: float
+    stage: str = ""         # early(🌱 초기) | building(🌿 진행) | full(🌳 완성) | ""
+    cross_days_ago: int = -1  # 20×50 골든크로스가 몇 봉 전(-1=없음)
+
+
+EARLY_LOOKBACK = 15   # 최근 N봉 내 20×50 크로스면 '초기'로 인정
 
 
 def _ema(s: pd.Series, n: int) -> pd.Series:
@@ -41,11 +46,16 @@ def _rsi(close: pd.Series, n: int = 14) -> pd.Series:
 
 
 def compute_alignment(df: pd.DataFrame) -> AlignState | None:
-    """1h OHLC DataFrame → AlignState. 데이터 부족 시 None."""
+    """일봉 OHLC DataFrame → AlignState. 데이터 부족 시 None.
+       stage(상승 정렬 진행 단계):
+         early(🌱)    = 20>50 + 최근 EARLY_LOOKBACK봉 내 20×50 골든크로스 (시작점)
+         building(🌿) = 20>50>100 성립, 200 정렬은 아직
+         full(🌳)     = 20>50>100>200 완성"""
     if df is None or len(df) < max(MAS) + 5:
         return None
     c = df["Close"]
-    vals = {n: float(_ema(c, n).iloc[-1]) for n in MAS}
+    emas = {n: _ema(c, n) for n in MAS}
+    vals = {n: float(emas[n].iloc[-1]) for n in MAS}
     order = [vals[n] for n in MAS]     # [ema20, ema50, ema100, ema200]
     price = float(c.iloc[-1])
 
@@ -56,11 +66,28 @@ def compute_alignment(df: pd.DataFrame) -> AlignState | None:
 
     hi, lo = max(order), min(order)
     strength = (hi - lo) / price * 100 if price else 0.0
-
     rsi = float(_rsi(c).iloc[-1])
+
+    # ── 단계 판정 (상승 방향) ──
+    above = emas[20] > emas[50]
+    cross_ago = -1
+    arr = (above & ~above.shift(1).fillna(False)).values
+    idxs = np.where(arr)[0]
+    if len(idxs) and bool(above.iloc[-1]):
+        cross_ago = int(len(df) - 1 - idxs[-1])
+
+    stage = ""
+    if is_bull:
+        stage = "full"
+    elif vals[20] > vals[50] > vals[100]:
+        stage = "building"
+    elif vals[20] > vals[50] and 0 <= cross_ago <= EARLY_LOOKBACK:
+        stage = "early"
+
     return AlignState(
         status=status, strength=strength, mas=vals, price=price,
         above_all=price > hi, below_all=price < lo, rsi=rsi,
+        stage=stage, cross_days_ago=cross_ago,
     )
 
 
@@ -70,3 +97,10 @@ STATUS_LABEL = {
     "mixed": ("⚪ 혼조", "정렬 안 됨"),
 }
 STATUS_CLS = {"bull": "al-bull", "bear": "al-bear", "mixed": "al-mixed"}
+
+STAGE_LABEL = {
+    "early":    ("🌱 초기 전환", "20×50 골든크로스 직후 — 시작점 후보"),
+    "building": ("🌿 진행 중", "20>50>100 — 정배열 형성 중"),
+    "full":     ("🌳 정배열 완성", "20>50>100>200"),
+}
+STAGE_CLS = {"early": "st-early", "building": "st-building", "full": "st-full"}
