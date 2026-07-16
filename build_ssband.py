@@ -183,6 +183,13 @@ def main():
         f.write(html)
     print(f"✅ {bs.SITE}/ssband.html (롱 {len(longs)} · 숏 {len(shorts)})")
 
+    # 텔레그램 전송 (Secrets 미설정이면 자동 스킵)
+    try:
+        import notify_telegram as nt
+        nt.notify_ssband(longs, shorts, bs.CHARTS, stamp)
+    except Exception as e:
+        print(f"  텔레그램 알림 오류(무시하고 계속): {e}")
+
 
 if __name__ == "__main__":
     main()

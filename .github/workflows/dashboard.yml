@@ -58,6 +58,9 @@ jobs:
 
       - name: Build ssband page
         run: python build_ssband.py
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
