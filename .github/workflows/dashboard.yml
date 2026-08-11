@@ -72,14 +72,14 @@ jobs:
         run: python build_ssband.py
         timeout-minutes: 8
         continue-on-error: true
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
       - name: Build mtfband page
         run: python build_mtfband.py
         timeout-minutes: 8
         continue-on-error: true
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

@@ -146,3 +146,96 @@ def notify_ssband(longs: list, shorts: list, charts_dir: str, stamp: str,
             send_message(caption)
             sent += 1
     print(f"  텔레그램 전송: 신규 롱{len(new_longs)}/숏{len(new_shorts)} · 차트 {sent}")
+
+
+# ── MTF 밴드 역추세 알림 ──────────────────────────────────────────────────
+MTF_DASHBOARD_URL = "https://antifrg3.github.io/ma-fib-scanner/mtfband.html"
+MTF_STATE_URL = "https://antifrg3.github.io/ma-fib-scanner/mtf_state.json"
+
+
+def load_prev_mtf() -> set:
+    """이전 스캔의 MTF 신호 집합."""
+    try:
+        req = urllib.request.Request(MTF_STATE_URL, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            d = json.loads(r.read().decode())
+        return set(d.get("signals", []))
+    except Exception:
+        return set()
+
+
+def save_mtf_state(longs: list, shorts: list, site_dir: str, stamp: str):
+    """이번 MTF 신호를 site/mtf_state.json에 저장(배포되면 다음 실행이 읽음)."""
+    sigs = ([f"long:{c['ticker']}" for c in longs] +
+            [f"short:{c['ticker']}" for c in shorts])
+    try:
+        with open(os.path.join(site_dir, "mtf_state.json"), "w", encoding="utf-8") as f:
+            json.dump({"stamp": stamp, "signals": sigs}, f, ensure_ascii=False)
+    except Exception as e:
+        print(f"  MTF 상태 저장 실패(무시): {e}")
+
+
+def notify_mtfband(longs: list, shorts: list, charts_dir: str, stamp: str,
+                   min_stars: int = 3, max_charts: int = 10):
+    """MTF 밴드 역추세 — 신규 발생 + ⭐min_stars 이상만 전송."""
+    token, chat = _token_chat()
+    if not token or not chat:
+        print("  텔레그램 미설정 — 전송 스킵")
+        return
+
+    prev = load_prev_mtf()
+    new_longs = [c for c in longs
+                 if f"long:{c['ticker']}" not in prev and c["state"].stars >= min_stars]
+    new_shorts = [c for c in shorts
+                  if f"short:{c['ticker']}" not in prev and c["state"].stars >= min_stars]
+
+    if not new_longs and not new_shorts:
+        print(f"  MTF 신규(⭐{min_stars}+) 0개 "
+              f"(전체 롱{len(longs)}/숏{len(shorts)}) — 전송 생략")
+        return
+
+    def names(items):
+        return ", ".join(f"{c['ticker'].replace('USDT','')}({'⭐'*c['state'].stars})"
+                         for c in items) or "—"
+    lines = [f"🎚️ <b>MTF 밴드 역추세 — 신규</b>  {stamp} KST"]
+    if new_longs:
+        lines.append(f"🟢 롱 {len(new_longs)}개: <b>{names(new_longs)}</b>")
+    if new_shorts:
+        lines.append(f"🔴 숏 {len(new_shorts)}개: <b>{names(new_shorts)}</b>")
+    lines.append(f"(전체: 롱 {len(longs)} · 숏 {len(shorts)} · ⭐{min_stars}+ 만 알림)")
+    lines.append(f'<a href="{MTF_DASHBOARD_URL}">대시보드 열기</a>')
+    send_message("\n".join(lines))
+
+    # ⭐ 높은 순으로 차트 전송
+    ordered = sorted(new_longs + new_shorts, key=lambda c: -c["state"].stars)
+    sent = 0
+    for c in ordered:
+        if sent >= max_charts:
+            send_message(f"…외 신규 {len(ordered) - sent}개는 대시보드에서 확인")
+            break
+        t = c["ticker"]
+        st = c["state"]
+        sig = "🟢 롱" if st.signal == "long" else "🔴 숏"
+        ext = {"daily": "일봉 밴드 이탈", "h4": "4시간 밴드 이탈",
+               "h1": "1시간 밴드 이탈"}.get(st.extremity, "")
+        divs = []
+        if st.div_1h:
+            divs.append("1H 다이버전스")
+        if st.div_4h:
+            divs.append("4H 다이버전스")
+        divtxt = (" · " + " · ".join(divs)) if divs else ""
+        fn = os.path.join(charts_dir, f"mtf_{t.replace('.', '_')}.png")
+        caption = (f"{sig} {'⭐' * st.stars}  <b>{t}</b>\n"
+                   f"{ext}{divtxt}\n"
+                   f"4H 밴드 위치 {st.pct_b_4h:.0%} · 1H RSI {st.rsi_1h:.0f} · {st.h1_note}\n"
+                   f'<a href="{tv_link(t)}">TradingView 차트</a> · '
+                   f'<a href="{MTF_DASHBOARD_URL}">대시보드</a>')
+        try:
+            with open(fn, "rb") as f:
+                png = f.read()
+            if send_photo(png, caption):
+                sent += 1
+        except FileNotFoundError:
+            send_message(caption)
+            sent += 1
+    print(f"  MTF 텔레그램 전송: 신규 롱{len(new_longs)}/숏{len(new_shorts)} · 차트 {sent}")

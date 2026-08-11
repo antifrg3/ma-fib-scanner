@@ -183,13 +183,7 @@ def main():
         f.write(html)
     print(f"✅ {bs.SITE}/ssband.html (롱 {len(longs)} · 숏 {len(shorts)})")
 
-    # 텔레그램: 신규 신호만 알림 + 상태 저장(다음 스캔 비교용, 배포에 실림)
-    try:
-        import notify_telegram as nt
-        nt.notify_ssband(longs, shorts, bs.CHARTS, stamp)
-        nt.save_state(longs, shorts, bs.SITE, stamp)
-    except Exception as e:
-        print(f"  텔레그램 알림 오류(무시하고 계속): {e}")
+    # (텔레그램 알림은 MTF밴드로 이관됨 — build_mtfband.py 참고)
 
 
 if __name__ == "__main__":

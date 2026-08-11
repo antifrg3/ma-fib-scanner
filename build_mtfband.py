@@ -22,7 +22,8 @@ import ma_fib_scanner as s
 import build_site as bs
 import mtfband as mt
 
-BARS = 120   # 차트에 그릴 4시간봉 개수
+BARS = 120          # 차트에 그릴 4시간봉 개수
+MIN_STARS_ALERT = 3  # 텔레그램 알림 최소 ⭐ (대시보드엔 전부 표시)
 
 
 def fetch(symbol: str, interval: str, limit: int) -> pd.DataFrame | None:
@@ -236,6 +237,14 @@ def main():
     with open(os.path.join(bs.SITE, "mtfband.html"), "w", encoding="utf-8") as f:
         f.write(html)
     print(f"✅ {bs.SITE}/mtfband.html (롱 {len(longs)} · 숏 {len(shorts)})")
+
+    # 텔레그램: 신규 발생 + ⭐3 이상만 알림 + 상태 저장
+    try:
+        import notify_telegram as nt
+        nt.notify_mtfband(longs, shorts, bs.CHARTS, stamp, min_stars=MIN_STARS_ALERT)
+        nt.save_mtf_state(longs, shorts, bs.SITE, stamp)
+    except Exception as e:
+        print(f"  텔레그램 알림 오류(무시하고 계속): {e}")
 
 
 if __name__ == "__main__":
