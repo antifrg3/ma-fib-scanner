@@ -451,6 +451,7 @@ def nav_html(active: str) -> str:
             + a("alignment.html", "📊 정배열", "alignment")
             + a("outperform.html", "🔥 BTC강세", "outperform")
             + a("ssband.html", "🌊 SS밴드", "ssband")
+            + a("mtfband.html", "🎚️ MTF밴드", "mtfband")
             + '</div>')
 
 
