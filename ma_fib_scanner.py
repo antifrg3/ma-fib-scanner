@@ -307,7 +307,7 @@ def _binance_klines(symbol: str, interval: str, limit: int = 1000):
         try:
             url = f"{base}/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
             req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=25) as r:
+            with urllib.request.urlopen(req, timeout=10) as r:
                 data = json.loads(r.read().decode())
             if isinstance(data, list) and data:
                 return data

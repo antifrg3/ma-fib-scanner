@@ -42,7 +42,7 @@ def top_symbols(n: int = 100) -> list[str]:
         try:
             req = urllib.request.Request(base_url + "/api/v3/ticker/24hr",
                                          headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=30) as r:
+            with urllib.request.urlopen(req, timeout=10) as r:
                 data = json.loads(r.read().decode())
             if data:
                 break
@@ -80,7 +80,7 @@ def fetch_ohlc(symbol: str, days: int = 120) -> pd.DataFrame | None:
             url = (f"{base_url}/api/v3/klines?symbol={symbol}"
                    f"&interval=1d&limit={days + 5}")
             req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=25) as r:
+            with urllib.request.urlopen(req, timeout=10) as r:
                 d = json.loads(r.read().decode())
             if isinstance(d, list) and len(d) >= 30:
                 idx = pd.to_datetime([k[0] for k in d], unit="ms")
