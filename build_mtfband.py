@@ -51,9 +51,14 @@ def scan():
 
 # ── 차트: 4시간 캔들 + 3개 시간봉 밴드 겹치기 ─────────────────────────────
 def _align_to(src_bands, src_index, target_index):
-    """상위/하위 시간봉 밴드를 4시간 축에 정렬(직전값 유지)."""
-    ser = pd.Series(src_bands.values, index=src_index)
-    return ser.reindex(target_index, method="ffill")
+    """상위/하위 시간봉 밴드를 4시간 축에 정렬.
+       ffill은 계단이 생겨 밴드 관계가 안 보이므로 시간 기준 선형보간 사용."""
+    ser = pd.Series(src_bands.values, index=src_index).dropna()
+    if ser.empty:
+        return pd.Series(np.nan, index=target_index)
+    # 두 인덱스를 합쳐 보간한 뒤 목표 축만 추출 → 매끄러운 곡선
+    merged = ser.reindex(ser.index.union(target_index)).interpolate(method="time")
+    return merged.reindex(target_index).ffill().bfill()
 
 
 def render_chart(c: dict) -> bytes:
