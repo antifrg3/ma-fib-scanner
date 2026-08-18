@@ -16,6 +16,7 @@ flows.py — 시장별 수급·포지션 데이터 수집 및 해석
 ⚠️ 코스피는 pykrx(투자자별 순매수)가 막혀 이번 범위에서 제외.
 """
 import json
+import os
 import urllib.request
 from dataclasses import dataclass, field
 from typing import Optional, List
@@ -23,37 +24,22 @@ from typing import Optional, List
 import numpy as np
 import pandas as pd
 
-# 선물 API 도메인 — 앞에서부터 시도(일부 서버에서 지역 차단될 수 있음)
-FAPI_HOSTS = [
-    "https://fapi.binance.com",
-    "https://fapi1.binance.com",
-    "https://fapi2.binance.com",
-]
-FAPI = FAPI_HOSTS[0]
+# 바이낸스 선물 API는 미국 서버(GitHub Actions)에서 지역 차단되므로
+# CoinGecko를 경유해 바이낸스 선물 데이터를 받는다(미국에서도 정상 작동, 키 불필요).
+CG = "https://api.coingecko.com/api/v3"
 
 
 LAST_ERROR = {"btc": ""}
 
 
-def _get(url: str, timeout: int = 10):
-    """단일 URL 요청. 선물 도메인이면 대체 호스트까지 순차 시도."""
-    candidates = [url]
-    for h in FAPI_HOSTS:
-        if url.startswith(h):
-            path = url[len(h):]
-            candidates = [alt + path for alt in FAPI_HOSTS]
-            break
-    last_err = ""
-    for u in candidates:
-        try:
-            req = urllib.request.Request(u, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=timeout) as r:
-                return json.loads(r.read().decode())
-        except Exception as e:
-            last_err = str(e)[:120]
-            continue
-    LAST_ERROR["btc"] = last_err
-    return None
+def _get(url: str, timeout: int = 15):
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read().decode())
+    except Exception as e:
+        LAST_ERROR["btc"] = str(e)[:120]
+        return None
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -92,21 +78,61 @@ def _verdict(metrics: List[Metric]) -> str:
     return "neutral"
 
 
+def _state_path(state_dir: str) -> str:
+    return os.path.join(state_dir, "flows_state.json")
+
+
+def _load_prev(state_dir: str):
+    """직전 실행의 OI·가격. CoinGecko 무료는 이력을 안 주므로 자체 저장해 비교한다."""
+    try:
+        with open(_state_path(state_dir), encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        # 배포된 사이트에서 읽기(로컬에 파일이 없을 때)
+        d = _get("https://antifrg3.github.io/ma-fib-scanner/flows_state.json", timeout=10)
+        return d if isinstance(d, dict) else None
+
+
+def _save_state(state_dir: str, data: dict):
+    try:
+        os.makedirs(state_dir, exist_ok=True)
+        with open(_state_path(state_dir), "w", encoding="utf-8") as f:
+            json.dump(data, f)
+    except Exception:
+        pass
+
+
+
 # ══════════════════════════════════════════════════════════════════════════
 # ① BTC — 선물 포지션 수급
 # ══════════════════════════════════════════════════════════════════════════
-def fetch_btc_flow(symbol: str = "BTCUSDT") -> Optional[MarketFlow]:
+def fetch_btc_flow(symbol: str = "BTCUSDT", state_dir: str = "site") -> Optional[MarketFlow]:
+    """CoinGecko 경유로 바이낸스 선물 펀딩비·미결제약정을 받아 해석.
+
+    바이낸스 선물 API를 직접 호출하면 미국 서버에서 지역 차단되므로 CoinGecko를 쓴다.
+    무료 티어는 현재값만 주므로, OI 추세는 이전 실행값을 저장해 비교한다.
+    """
     ms: List[Metric] = []
 
-    # 펀딩비 — 현재 + 최근 평균
-    prem = _get(f"{FAPI}/fapi/v1/premiumIndex?symbol={symbol}")
-    hist = _get(f"{FAPI}/fapi/v1/fundingRate?symbol={symbol}&limit=24")
-    if prem and "lastFundingRate" in prem:
-        fr = float(prem["lastFundingRate"]) * 100
-        avg = None
-        if isinstance(hist, list) and hist:
-            avg = float(np.mean([float(x["fundingRate"]) for x in hist])) * 100
-        # 해석: 과열은 역방향 재료. 0.03%↑ 롱 과열 / -0.01%↓ 숏 과열
+    d = _get(f"{CG}/derivatives/exchanges/binance_futures"
+             f"?include_tickers=unexpired")
+    tick = None
+    if isinstance(d, dict):
+        for t in d.get("tickers", []):
+            if t.get("symbol") == symbol and t.get("contract_type") == "perpetual":
+                tick = t
+                break
+    if tick is None:
+        err = LAST_ERROR.get("btc") or "BTCUSDT 무기한 항목을 찾지 못함"
+        return MarketFlow("btc", "비트코인", "neutral",
+                          "데이터 수집 실패 — 아래 사유 확인",
+                          [Metric("수집 오류", err, "warn",
+                                  "CoinGecko 파생상품 응답 확인 필요")])
+
+    # ── 펀딩비 (CoinGecko는 % 단위로 제공) ──
+    fr = tick.get("funding_rate")
+    if fr is not None:
+        fr = float(fr)
         if fr >= 0.03:
             sig, note = "warn", "롱 과열 — 되돌림 위험"
         elif fr <= -0.01:
@@ -115,66 +141,58 @@ def fetch_btc_flow(symbol: str = "BTCUSDT") -> Optional[MarketFlow]:
             sig, note = "neutral", "롱 소폭 우위(정상 범위)"
         else:
             sig, note = "neutral", "숏 소폭 우위"
-        val = f"{fr:+.4f}%" + (f" (24회 평균 {avg:+.4f}%)" if avg is not None else "")
-        ms.append(Metric("펀딩비", val, sig, note))
+        ms.append(Metric("펀딩비", f"{fr:+.4f}%", sig, note))
 
-    # 미결제약정 — 7일 변화 + 가격 변화 조합
-    oi_hist = _get(f"{FAPI}/futures/data/openInterestHist?symbol={symbol}&period=1d&limit=8")
-    kl = _get(f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=1d&limit=8")
-    if isinstance(oi_hist, list) and len(oi_hist) >= 2:
-        o0, o1 = float(oi_hist[0]["sumOpenInterest"]), float(oi_hist[-1]["sumOpenInterest"])
-        oi_chg = (o1 / o0 - 1) * 100 if o0 else 0.0
-        px_chg = 0.0
-        if isinstance(kl, list) and len(kl) >= 2:
-            px_chg = (float(kl[-1][4]) / float(kl[0][4]) - 1) * 100
-        # 고전적 해석: 가격↑+OI↑=신규 매수(강세) · 가격↑+OI↓=숏커버(약함)
-        #             가격↓+OI↑=신규 매도(약세) · 가격↓+OI↓=롱청산(바닥 신호)
-        if px_chg > 0 and oi_chg > 0:
-            sig, note = "bull", "가격↑ + OI↑ = 신규 매수 유입(건강한 상승)"
-        elif px_chg > 0 and oi_chg <= 0:
-            sig, note = "neutral", "가격↑ + OI↓ = 숏커버 반등(지속력 약함)"
-        elif px_chg <= 0 and oi_chg > 0:
-            sig, note = "bear", "가격↓ + OI↑ = 신규 매도 유입(하락 압력)"
+    # ── 미결제약정 + 직전 실행 대비 변화 ──
+    oi = tick.get("open_interest_usd")
+    price = tick.get("last")
+    if oi is not None:
+        oi = float(oi)
+        prev = _load_prev(state_dir)
+        oi_txt = f"${oi/1e9:.2f}B"
+        sig, note = "neutral", "직전 기록 없음(다음 갱신부터 추세 표시)"
+        if prev and prev.get("oi"):
+            oi_chg = (oi / float(prev["oi"]) - 1) * 100
+            px_chg = 0.0
+            if price and prev.get("price"):
+                px_chg = (float(price) / float(prev["price"]) - 1) * 100
+            # 가격·OI 조합 해석
+            if px_chg > 0 and oi_chg > 0:
+                sig, note = "bull", "가격↑ + OI↑ = 신규 매수 유입(건강한 상승)"
+            elif px_chg > 0 and oi_chg <= 0:
+                sig, note = "neutral", "가격↑ + OI↓ = 숏커버 반등(지속력 약함)"
+            elif px_chg <= 0 and oi_chg > 0:
+                sig, note = "bear", "가격↓ + OI↑ = 신규 매도 유입(하락 압력)"
+            else:
+                sig, note = "neutral", "가격↓ + OI↓ = 롱 청산 진행(바닥 탐색)"
+            oi_txt += f" · 직전 대비 {oi_chg:+.1f}% (가격 {px_chg:+.1f}%)"
+        ms.append(Metric("미결제약정", oi_txt, sig, note))
+        _save_state(state_dir, {"oi": oi, "price": price})
+
+    # ── 베이시스(선물-현물 괴리) ── 과열/저평가 참고
+    basis = tick.get("index_basis_percentage")
+    if basis is not None:
+        b = float(basis)
+        if b <= -0.1:
+            sig, note = "bull", "선물이 현물보다 저평가 — 매수 심리 약함"
+        elif b >= 0.1:
+            sig, note = "warn", "선물 프리미엄 — 롱 과열 참고"
         else:
-            sig, note = "neutral", "가격↓ + OI↓ = 롱 청산 진행(바닥 탐색)"
-        ms.append(Metric("미결제약정(7일)", f"{oi_chg:+.1f}% · 가격 {px_chg:+.1f}%", sig, note))
+            sig, note = "neutral", "현물과 괴리 작음"
+        ms.append(Metric("베이시스", f"{b:+.3f}%", sig, note))
 
-    # 롱숏 계정비율(개인) vs 대형트레이더 — 엇갈리면 주목
-    lsr = _get(f"{FAPI}/futures/data/globalLongShortAccountRatio?symbol={symbol}&period=1d&limit=2")
-    top = _get(f"{FAPI}/futures/data/topLongShortPositionRatio?symbol={symbol}&period=1d&limit=2")
-    r_all = float(lsr[-1]["longShortRatio"]) if isinstance(lsr, list) and lsr else None
-    r_top = float(top[-1]["longShortRatio"]) if isinstance(top, list) and top else None
-    if r_all is not None:
-        sig = "warn" if r_all >= 2.0 else ("neutral" if r_all >= 1.0 else "bull")
-        note = ("개인 롱 쏠림 — 역방향 주의" if r_all >= 2.0
-                else "롱 우위" if r_all >= 1.0 else "숏 우위 — 반등 여지")
-        ms.append(Metric("롱숏비(개인)", f"{r_all:.2f}", sig, note))
-    if r_top is not None and r_all is not None:
-        diverge = (r_top - r_all)
-        if abs(diverge) >= 0.3:
-            sig = "bull" if diverge > 0 else "bear"
-            note = ("큰손이 개인보다 롱 — 주목" if diverge > 0
-                    else "큰손이 개인보다 숏 — 경계")
-        else:
-            sig, note = "neutral", "큰손·개인 방향 일치(판단 재료 약함)"
-        ms.append(Metric("롱숏비(큰손)", f"{r_top:.2f} (개인차 {diverge:+.2f})", sig, note))
-
-    # 테이커 매수/매도 — 공격적 주문 방향
-    tk = _get(f"{FAPI}/futures/data/takerlongshortRatio?symbol={symbol}&period=1d&limit=3")
-    if isinstance(tk, list) and tk:
-        b = float(tk[-1]["buySellRatio"])
-        sig = "bull" if b >= 1.05 else ("bear" if b <= 0.95 else "neutral")
-        note = ("공격적 매수 우위" if b >= 1.05
-                else "공격적 매도 우위" if b <= 0.95 else "균형")
-        ms.append(Metric("테이커 매수/매도", f"{b:.2f}", sig, note))
+    # ── 24시간 거래량 ──
+    vol = tick.get("h24_volume")
+    if vol:
+        ms.append(Metric("24h 거래량", f"${float(vol)/1e9:.2f}B", "neutral",
+                         "선물 거래 활성도"))
 
     if not ms:
-        # 전부 실패 — 원인을 표시해 진단 가능하게(서버 지역 차단 등)
         err = LAST_ERROR.get("btc") or "알 수 없는 오류"
         return MarketFlow("btc", "비트코인", "neutral",
                           "데이터 수집 실패 — 아래 사유 확인",
-                          [Metric("수집 오류", err, "warn",
-                                  "바이낸스 선물 API 접근 불가(서버 지역 제한 가능)")])
+                          [Metric("수집 오류", err, "warn", "CoinGecko 응답 확인 필요")])
+
     v = _verdict(ms)
     head = {"bull": "매수 수급 우위", "bear": "매도 수급 우위",
             "neutral": "중립 — 뚜렷한 쏠림 없음"}[v]
@@ -310,9 +328,10 @@ def fetch_us_flow(key: str) -> Optional[MarketFlow]:
     return MarketFlow(key, name, v, head, ms)
 
 
-def fetch_all() -> List[MarketFlow]:
+def fetch_all(state_dir: str = "site") -> List[MarketFlow]:
     out = []
-    for f in (fetch_btc_flow(), fetch_us_flow("nasdaq"), fetch_us_flow("sp500")):
+    for f in (fetch_btc_flow(state_dir=state_dir),
+              fetch_us_flow("nasdaq"), fetch_us_flow("sp500")):
         if f is not None:
             out.append(f)
     return out

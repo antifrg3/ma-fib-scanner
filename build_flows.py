@@ -101,12 +101,15 @@ def page_html(stamp, markets):
   <div class="how">
     <b>어떻게 보나</b> · 상단 신호등으로 오늘 어느 시장이 우호적인지 먼저 훑고,
     아래 표에서 근거를 확인하세요. <b>비트코인</b>은 선물 포지션 수급(펀딩비·미결제약정·
-    롱숏비)으로 과열과 신규자금 유입을 봅니다. <b>나스닥·S&P</b>는 실제 자금흐름 대신
-    VIX·금리·달러·하이일드로 위험선호 환경을 읽습니다.
-    펀딩비 과열이나 개인 롱 쏠림은 <b>역방향 재료</b>로 해석합니다.
+    베이시스)으로 과열과 신규자금 유입을 봅니다. 미결제약정은 <b>직전 갱신 대비</b>
+    변화를 가격과 함께 해석합니다(가격↑+OI↑=신규매수, 가격↓+OI↓=롱청산).
+    <b>나스닥·S&P</b>는 실제 자금흐름 대신 VIX·금리·달러·하이일드로 위험선호 환경을 읽습니다.
+    펀딩비 과열은 <b>역방향 재료</b>로 해석합니다.
   </div>
   <div class="foot">
     수급은 방향을 보장하지 않으며 '환경'을 알려주는 참고 지표입니다.
+    비트코인 선물 데이터는 CoinGecko를 경유해 받습니다(바이낸스 직접 접근이 서버 지역에서
+    제한되기 때문). 롱숏비·테이커 비율은 이 경로에서 제공되지 않아 제외됩니다.
     코스피는 투자자별 수급 데이터 확보 실패로 제외되어 있습니다.
     백테스트로 검증된 신호가 아니며 투자 조언이 아닙니다.
   </div>
@@ -117,7 +120,7 @@ def page_html(stamp, markets):
 
 def main():
     os.makedirs(bs.SITE, exist_ok=True)
-    markets = fl.fetch_all()
+    markets = fl.fetch_all(state_dir=bs.SITE)
     stamp = datetime.now(bs.KST).strftime("%Y-%m-%d %H:%M")
     html = page_html(stamp, markets)
     with open(os.path.join(bs.SITE, "flows.html"), "w", encoding="utf-8") as f:
