@@ -452,6 +452,7 @@ def nav_html(active: str) -> str:
             + a("outperform.html", "🔥 BTC강세", "outperform")
             + a("ssband.html", "🌊 SS밴드", "ssband")
             + a("mtfband.html", "🎚️ MTF밴드", "mtfband")
+            + a("flows.html", "💧 수급", "flows")
             + '</div>')
 
 
