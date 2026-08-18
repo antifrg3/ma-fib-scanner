@@ -23,16 +23,37 @@ from typing import Optional, List
 import numpy as np
 import pandas as pd
 
-FAPI = "https://fapi.binance.com"
+# 선물 API 도메인 — 앞에서부터 시도(일부 서버에서 지역 차단될 수 있음)
+FAPI_HOSTS = [
+    "https://fapi.binance.com",
+    "https://fapi1.binance.com",
+    "https://fapi2.binance.com",
+]
+FAPI = FAPI_HOSTS[0]
+
+
+LAST_ERROR = {"btc": ""}
 
 
 def _get(url: str, timeout: int = 10):
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            return json.loads(r.read().decode())
-    except Exception:
-        return None
+    """단일 URL 요청. 선물 도메인이면 대체 호스트까지 순차 시도."""
+    candidates = [url]
+    for h in FAPI_HOSTS:
+        if url.startswith(h):
+            path = url[len(h):]
+            candidates = [alt + path for alt in FAPI_HOSTS]
+            break
+    last_err = ""
+    for u in candidates:
+        try:
+            req = urllib.request.Request(u, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return json.loads(r.read().decode())
+        except Exception as e:
+            last_err = str(e)[:120]
+            continue
+    LAST_ERROR["btc"] = last_err
+    return None
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -148,7 +169,12 @@ def fetch_btc_flow(symbol: str = "BTCUSDT") -> Optional[MarketFlow]:
         ms.append(Metric("테이커 매수/매도", f"{b:.2f}", sig, note))
 
     if not ms:
-        return None
+        # 전부 실패 — 원인을 표시해 진단 가능하게(서버 지역 차단 등)
+        err = LAST_ERROR.get("btc") or "알 수 없는 오류"
+        return MarketFlow("btc", "비트코인", "neutral",
+                          "데이터 수집 실패 — 아래 사유 확인",
+                          [Metric("수집 오류", err, "warn",
+                                  "바이낸스 선물 API 접근 불가(서버 지역 제한 가능)")])
     v = _verdict(ms)
     head = {"bull": "매수 수급 우위", "bear": "매도 수급 우위",
             "neutral": "중립 — 뚜렷한 쏠림 없음"}[v]
@@ -158,23 +184,46 @@ def fetch_btc_flow(symbol: str = "BTCUSDT") -> Optional[MarketFlow]:
 # ══════════════════════════════════════════════════════════════════════════
 # ②③ 미국 지수 — 위험선호 환경
 # ══════════════════════════════════════════════════════════════════════════
-def _yf_last(sym: str, period: str = "1mo"):
-    """(현재값, 전일대비%, 거래량배수) — 실패 시 None."""
+def _scalar(x):
+    """pandas 값 → float. Series/배열이면 첫 원소. NaN이면 None."""
+    try:
+        if hasattr(x, "item"):
+            x = x.item()
+        elif hasattr(x, "iloc"):
+            x = x.iloc[0]
+        v = float(x)
+        return None if np.isnan(v) else v
+    except Exception:
+        return None
+
+
+def _yf_last(sym: str, period: str = "2mo"):
+    """(현재값, 전일대비%, 거래량배수) — 실패 시 None.
+       야후는 장 시작 전/휴장일에 마지막 행이 NaN인 경우가 있어 반드시 정리한다."""
     try:
         import yfinance as yf
         df = yf.download(sym, period=period, progress=False, auto_adjust=True)
-        if df is None or df.empty or len(df) < 2:
+        if df is None or df.empty:
             return None
-        c = df["Close"]
-        last = float(c.iloc[-1].item() if hasattr(c.iloc[-1], "item") else c.iloc[-1])
-        prev = float(c.iloc[-2].item() if hasattr(c.iloc[-2], "item") else c.iloc[-2])
-        chg = (last / prev - 1) * 100 if prev else 0.0
+        # 멀티인덱스 컬럼(단일 심볼인데 2단으로 오는 경우) 평탄화
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        if "Close" not in df.columns:
+            return None
+        df = df[df["Close"].notna()]          # NaN 행 제거 ← nan 표시의 원인
+        if len(df) < 2:
+            return None
+        last = _scalar(df["Close"].iloc[-1])
+        prev = _scalar(df["Close"].iloc[-2])
+        if last is None or prev is None or prev == 0:
+            return None
+        chg = (last / prev - 1) * 100
         volx = None
         if "Volume" in df.columns:
-            v = df["Volume"]
-            vl = float(v.iloc[-1].item() if hasattr(v.iloc[-1], "item") else v.iloc[-1])
-            va = float(v.tail(20).mean())
-            volx = (vl / va) if va > 0 else None
+            vl = _scalar(df["Volume"].iloc[-1])
+            va = float(df["Volume"].tail(20).mean())
+            if vl is not None and va and va > 0:
+                volx = vl / va
         return last, chg, volx
     except Exception:
         return None
