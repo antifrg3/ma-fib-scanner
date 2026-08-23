@@ -28,6 +28,15 @@ import setup_screen as sc
 
 BARS = 180          # 차트 표시 봉 수
 SHOW_MAX = 40       # 섹션당 최대 표시 수
+RSI_LEN = 14        # 차트 하단 RSI 패널
+
+
+def _rsi(close: pd.Series, n: int = RSI_LEN) -> pd.Series:
+    d = close.diff()
+    up = d.clip(lower=0).ewm(alpha=1 / n, adjust=False).mean()
+    dn = (-d).clip(lower=0).ewm(alpha=1 / n, adjust=False).mean()
+    rs = up / dn.replace(0, np.nan)
+    return 100 - 100 / (1 + rs)
 
 
 def _load(ticker: str, market: str):
@@ -75,9 +84,18 @@ def render_chart(c: dict) -> bytes:
     ma150 = full["Close"].rolling(sc.MA_MID).mean().tail(BARS)
     ma200 = full["Close"].rolling(sc.MA_LONG).mean().tail(BARS)
 
+    # RSI는 전체 구간으로 계산한 뒤 표시 구간만 자른다(초기값 왜곡 방지)
+    rsi_full = _rsi(full["Close"])
+    rsi = rsi_full.tail(BARS)
+    rsi_now = float(rsi.iloc[-1]) if not np.isnan(rsi.iloc[-1]) else 50.0
+
+    # panel 0=캔들, 1=거래량, 2=RSI
+    # 가이드선(70/50/30)은 addplot으로 넣으면 축 스케일이 흔들려
+    # 렌더 후 axhline으로 직접 그린다.
     adds = [
         mpf.make_addplot(ma150, color="#4fc3d2", width=1.1),
         mpf.make_addplot(ma200, color="#fe0d5f", width=1.3),
+        mpf.make_addplot(rsi, panel=2, color="#c77dff", width=1.3, ylabel="RSI"),
     ]
     mc = mpf.make_marketcolors(up="#26a69a", down="#ef5350", edge="inherit",
                                wick="inherit", volume="in")
@@ -86,12 +104,24 @@ def render_chart(c: dict) -> bytes:
                                figcolor="#0e0e12", gridcolor="#1c1c24")
     buf = io.BytesIO()
     fig, axes = mpf.plot(df, type="candle", style=style, addplot=adds,
-                         figsize=(7.6, 4.2), returnfig=True, volume=True,
+                         figsize=(7.6, 6.0), returnfig=True, volume=True,
+                         volume_panel=1, panel_ratios=(5.5, 1.4, 2.0),
                          tight_layout=True, xrotation=0, datetime_format="%m/%d")
+    # RSI 패널 축 고정 + 과매수/과매도 가이드
+    if len(axes) > 4:
+        ax_rsi = axes[4]
+        ax_rsi.set_ylim(0, 100)
+        ax_rsi.set_yticks([30, 50, 70])
+        ax_rsi.axhline(70, color="#ef5350", lw=0.7, ls="--", alpha=0.7)
+        ax_rsi.axhline(50, color="#6a6a78", lw=0.6, ls=":", alpha=0.7)
+        ax_rsi.axhline(30, color="#26a69a", lw=0.7, ls="--", alpha=0.7)
+        ax_rsi.axhspan(70, 100, color="#ef5350", alpha=0.06)
+        ax_rsi.axhspan(0, 30, color="#26a69a", alpha=0.06)
+
     trig = " ".join(t.split()[0] for t in r.triggers)   # 이모지만
     axes[0].set_title(
         f"{c['ticker']}  {r.passed_count}/7  low+{r.gain_from_low:.0f}%  "
-        f"high-{r.dist_from_high:.0f}%  {trig}  (150=cyan, 200=red)",
+        f"high-{r.dist_from_high:.0f}%  RSI {rsi_now:.0f}  {trig}  (150=cyan, 200=red)",
         fontsize=9.5, loc="left", color="#e8e8ee")
     fig.savefig(buf, format="png", dpi=110, bbox_inches="tight", facecolor="#0e0e12")
     plt.close(fig)
