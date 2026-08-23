@@ -82,6 +82,11 @@ jobs:
         run: python build_flows.py
         timeout-minutes: 6
         continue-on-error: true
+
+      - name: Build setup page
+        run: python build_setup.py
+        timeout-minutes: 10
+        continue-on-error: true
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}

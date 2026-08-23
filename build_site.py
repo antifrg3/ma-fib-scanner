@@ -453,6 +453,7 @@ def nav_html(active: str) -> str:
             + a("ssband.html", "🌊 SS밴드", "ssband")
             + a("mtfband.html", "🎚️ MTF밴드", "mtfband")
             + a("flows.html", "💧 수급", "flows")
+            + a("setup.html", "🎯 셋업", "setup")
             + '</div>')
 
 
