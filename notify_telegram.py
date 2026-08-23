@@ -239,3 +239,95 @@ def notify_mtfband(longs: list, shorts: list, charts_dir: str, stamp: str,
             send_message(caption)
             sent += 1
     print(f"  MTF 텔레그램 전송: 신규 롱{len(new_longs)}/숏{len(new_shorts)} · 차트 {sent}")
+
+
+# ── 셋업 스크리너 알림 ────────────────────────────────────────────────────
+SETUP_DASHBOARD_URL = "https://antifrg3.github.io/ma-fib-scanner/setup.html"
+SETUP_STATE_URL = "https://antifrg3.github.io/ma-fib-scanner/setup_state.json"
+
+
+def load_prev_setup() -> set:
+    try:
+        req = urllib.request.Request(SETUP_STATE_URL, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            d = json.loads(r.read().decode())
+        return set(d.get("signals", []))
+    except Exception:
+        return set()
+
+
+def save_setup_state(trig_items: list, pass_items: list, site_dir: str, stamp: str):
+    """트리거는 종류까지, 통과는 티커만 기록(다음 실행에서 신규 판별)."""
+    sigs = []
+    for c in trig_items:
+        for t in c["result"].triggers:
+            sigs.append(f"trig:{c['ticker']}:{t}")
+    for c in pass_items:
+        sigs.append(f"pass:{c['ticker']}")
+    try:
+        with open(os.path.join(site_dir, "setup_state.json"), "w", encoding="utf-8") as f:
+            json.dump({"stamp": stamp, "signals": sigs}, f, ensure_ascii=False)
+    except Exception as e:
+        print(f"  셋업 상태 저장 실패(무시): {e}")
+
+
+def notify_setup(trig_items: list, pass_items: list, charts_dir: str, stamp: str,
+                 max_charts: int = 8):
+    """셋업 스크리너 — 신규 트리거/신규 통과만 전송."""
+    token, chat = _token_chat()
+    if not token or not chat:
+        print("  텔레그램 미설정 — 전송 스킵")
+        return
+
+    prev = load_prev_setup()
+    new_trig = [c for c in trig_items
+                if any(f"trig:{c['ticker']}:{t}" not in prev for t in c["result"].triggers)]
+    new_pass = [c for c in pass_items if f"pass:{c['ticker']}" not in prev]
+
+    if not new_trig and not new_pass:
+        print(f"  셋업 신규 0개 (트리거 {len(trig_items)}/통과 {len(pass_items)} 유지) — 전송 생략")
+        return
+
+    def names(items):
+        return ", ".join(
+            f"{c['ticker'].replace('USDT','')}({c['result'].passed_count}/7)"
+            for c in items) or "—"
+
+    lines = [f"🎯 <b>셋업 스크리너 — 신규</b>  {stamp} KST"]
+    if new_trig:
+        lines.append(f"⚡ 트리거 {len(new_trig)}개: <b>{names(new_trig)}</b>")
+    if new_pass:
+        lines.append(f"✅ 신규 통과 {len(new_pass)}개: <b>{names(new_pass)}</b>")
+    lines.append(f"(전체: 트리거 {len(trig_items)} · 통과 {len(pass_items)})")
+    lines.append(f'<a href="{SETUP_DASHBOARD_URL}">대시보드 열기</a>')
+    send_message("\n".join(lines))
+
+    # 트리거 우선, 그다음 신규 통과 — 점수 높은 순
+    ordered = (sorted(new_trig, key=lambda c: -c["result"].score) +
+               sorted(new_pass, key=lambda c: -c["result"].score))
+    sent = 0
+    for c in ordered:
+        if sent >= max_charts:
+            send_message(f"…외 신규 {len(ordered) - sent}개는 대시보드에서 확인")
+            break
+        t = c["ticker"]
+        r = c["result"]
+        head = " ".join(r.triggers) if r.triggers else "✅ 추세 템플릿 통과"
+        fails = [lab for lab, ok, _ in r.conds if not ok]
+        fail_txt = ("미충족: " + ", ".join(fails)) if fails else "7조건 전부 충족"
+        fn = os.path.join(charts_dir, f"su_{t.replace('.', '_')}.png")
+        caption = (f"{head}  <b>{t}</b>  [{r.market}]\n"
+                   f"{r.passed_count}/7 · 52주 저가 +{r.gain_from_low:.0f}% · "
+                   f"고가 -{r.dist_from_high:.0f}%\n"
+                   f"{fail_txt}\n"
+                   f'<a href="{tv_link(t)}">TradingView 차트</a> · '
+                   f'<a href="{SETUP_DASHBOARD_URL}">대시보드</a>')
+        try:
+            with open(fn, "rb") as f:
+                png = f.read()
+            if send_photo(png, caption):
+                sent += 1
+        except FileNotFoundError:
+            send_message(caption)
+            sent += 1
+    print(f"  셋업 텔레그램 전송: 신규 트리거{len(new_trig)}/통과{len(new_pass)} · 차트 {sent}")

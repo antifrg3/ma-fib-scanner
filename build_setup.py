@@ -225,6 +225,14 @@ def main():
         f.write(html)
     print(f"✅ {bs.SITE}/setup.html (트리거 {len(trig_items)} · 통과 {len(pass_items)})")
 
+    # 텔레그램: 신규 트리거·신규 통과만 알림 + 상태 저장
+    try:
+        import notify_telegram as nt
+        nt.notify_setup(trig_items, pass_items, bs.CHARTS, stamp)
+        nt.save_setup_state(trig_items, pass_items, bs.SITE, stamp)
+    except Exception as e:
+        print(f"  텔레그램 알림 오류(무시하고 계속): {e}")
+
 
 if __name__ == "__main__":
     main()

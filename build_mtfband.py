@@ -238,13 +238,7 @@ def main():
         f.write(html)
     print(f"✅ {bs.SITE}/mtfband.html (롱 {len(longs)} · 숏 {len(shorts)})")
 
-    # 텔레그램: 신규 발생 + ⭐3 이상만 알림 + 상태 저장
-    try:
-        import notify_telegram as nt
-        nt.notify_mtfband(longs, shorts, bs.CHARTS, stamp, min_stars=MIN_STARS_ALERT)
-        nt.save_mtf_state(longs, shorts, bs.SITE, stamp)
-    except Exception as e:
-        print(f"  텔레그램 알림 오류(무시하고 계속): {e}")
+    # (텔레그램 알림은 셋업 스크리너로 이관됨 — build_setup.py 참고)
 
 
 if __name__ == "__main__":
