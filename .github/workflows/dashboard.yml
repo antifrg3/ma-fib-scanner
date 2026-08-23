@@ -100,6 +100,32 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
+      # Pages는 site/ 폴더를 통째로 교체한다. 셋업을 스킵한 실행에서는
+      # setup.html이 없어 기존 페이지가 사라지므로, 배포된 사본을 복원한다.
+      - name: Restore skipped pages
+        run: |
+          set +e
+          BASE="https://antifrg3.github.io/ma-fib-scanner"
+          mkdir -p site/charts
+          # 1) 페이지·상태 파일 복원
+          for f in setup.html setup_state.json; do
+            if [ ! -f "site/$f" ]; then
+              curl -fsSL "$BASE/$f" -o "site/$f" \
+                && echo "복원: $f" || echo "복원 실패(최초 실행 가능): $f"
+            fi
+          done
+          # 2) 복원된 setup.html이 참조하는 차트(su_*.png)도 함께 가져온다.
+          #    이미지가 없으면 페이지는 열려도 차트가 깨진다.
+          if [ -f "site/setup.html" ]; then
+            grep -o 'charts/su_[A-Za-z0-9_]*\.png' site/setup.html | sort -u | while read -r rel; do
+              if [ ! -f "site/$rel" ]; then
+                curl -fsSL "$BASE/$rel" -o "site/$rel" 2>/dev/null \
+                  && echo "차트 복원: $rel" || true
+              fi
+            done
+          fi
+          exit 0
+
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
