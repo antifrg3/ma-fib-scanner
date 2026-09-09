@@ -80,6 +80,11 @@ jobs:
         timeout-minutes: 8
         continue-on-error: true
 
+      - name: Build maosc page
+        run: python build_maosc.py
+        timeout-minutes: 7
+        continue-on-error: true
+
       - name: Build flows page
         run: python build_flows.py
         timeout-minutes: 6
