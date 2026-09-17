@@ -38,51 +38,29 @@ jobs:
       - name: Install deps
         run: pip install -r requirements.txt pykrx
 
-      - name: Refresh universe (나스닥100 · 코스피200 · 크립토 거래대금 상위)
+      - name: Refresh universe (선물 USDT-M 무기한 · 크립토 상위 + TradFi 전체)
         run: python build_universe.py
         timeout-minutes: 5
         env:
           CRYPTO_TOP_N: "50"        # 크립토 스캔 개수 (바꾸려면 이 숫자만 수정)
         continue-on-error: true   # 실패해도 기존 종목 파일로 진행
 
-      - name: Build dashboard
-        run: python build_site.py
-        timeout-minutes: 8
-        continue-on-error: true
-
-      - name: Build breakout page
-        run: python build_breakout.py
-        timeout-minutes: 8
-        continue-on-error: true
-
-      - name: Build squeeze page
-        run: python build_squeeze.py
-        timeout-minutes: 6
-        continue-on-error: true
-
-      - name: Build alignment page
-        run: python build_alignment.py
-        timeout-minutes: 6
-        continue-on-error: true
-
-      - name: Build outperform page
-        run: python build_outperform.py
-        timeout-minutes: 8
-        continue-on-error: true
-
-      - name: Build ssband page
-        run: python build_ssband.py
-        timeout-minutes: 8
-        continue-on-error: true
-
-      - name: Build mtfband page
-        run: python build_mtfband.py
+      # 첫 페이지(index.html) — BTC강세를 루트로 복사해 404를 막는다.
+      - name: Build outperform page (index)
+        run: |
+          python build_outperform.py
+          cp site/outperform.html site/index.html
         timeout-minutes: 8
         continue-on-error: true
 
       - name: Build maosc page
         run: python build_maosc.py
         timeout-minutes: 7
+        continue-on-error: true
+
+      - name: Build rvwap page
+        run: python build_rvwap.py
+        timeout-minutes: 8
         continue-on-error: true
 
       - name: Build flows page

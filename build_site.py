@@ -445,13 +445,7 @@ def nav_html(active: str) -> str:
         cls = "active" if key == active else ""
         return f'<a class="{cls}" href="{href}">{label}</a>'
     return ('<div class="nav">'
-            + a("index.html", "📉 눌림목", "pullback")
-            + a("breakout.html", "🚀 돌파", "breakout")
-            + a("squeeze.html", "🎯 스퀴즈", "squeeze")
-            + a("alignment.html", "📊 정배열", "alignment")
             + a("outperform.html", "🔥 BTC강세", "outperform")
-            + a("ssband.html", "🌊 SS밴드", "ssband")
-            + a("mtfband.html", "🎚️ MTF밴드", "mtfband")
             + a("flows.html", "💧 수급", "flows")
             + a("setup.html", "🎯 셋업", "setup")
             + a("maosc.html", "〽️ MA오실", "maosc")
