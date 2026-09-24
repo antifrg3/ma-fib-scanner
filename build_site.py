@@ -450,6 +450,7 @@ def nav_html(active: str) -> str:
             + a("setup.html", "🎯 셋업", "setup")
             + a("maosc.html", "〽️ MA오실", "maosc")
             + a("rvwap.html", "📐 RVWAP", "rvwap")
+            + a("maconv.html", "🧲 수렴", "maconv")
             + '</div>')
 
 

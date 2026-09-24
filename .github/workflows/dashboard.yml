@@ -63,6 +63,11 @@ jobs:
         timeout-minutes: 8
         continue-on-error: true
 
+      - name: Build maconv page
+        run: python build_maconv.py
+        timeout-minutes: 8
+        continue-on-error: true
+
       - name: Build flows page
         run: python build_flows.py
         timeout-minutes: 6
