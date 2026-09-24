@@ -24,7 +24,10 @@ concurrency:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 40        # 전체 40분 제한 (초과 시 실패시키고 다음 사이클로)
+    # 크립토 100종목 + TradFi 기준. 단계별 타임아웃 합(52분)보다 크게 잡아
+    # 한 단계가 오래 끌어도 배포 단계까지는 도달하도록 한다.
+    # (전에 스캔이 길어져 배포가 계속 취소되는 악순환을 겪었다)
+    timeout-minutes: 85
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -42,7 +45,10 @@ jobs:
         run: python build_universe.py
         timeout-minutes: 5
         env:
-          CRYPTO_TOP_N: "50"        # 크립토 스캔 개수 (바꾸려면 이 숫자만 수정)
+          # 크립토 스캔 개수. TradFi(주식·지수·원자재)는 이 값과 무관하게 전부 포함된다.
+          # 실측: 50위 ≈ 일 700만$, 100위 ≈ 200만$. 더 늘리면 유동성이 얇아지고
+          # 스캔 시간도 늘어 40분 타임아웃에 걸릴 수 있으니 실행 시간을 보고 조정할 것.
+          CRYPTO_TOP_N: "100"
         continue-on-error: true   # 실패해도 기존 종목 파일로 진행
 
       # 첫 페이지(index.html) — BTC강세를 루트로 복사해 404를 막는다.
@@ -50,23 +56,26 @@ jobs:
         run: |
           python build_outperform.py
           cp site/outperform.html site/index.html
-        timeout-minutes: 8
+        timeout-minutes: 12
         continue-on-error: true
 
       - name: Build maosc page
         run: python build_maosc.py
-        timeout-minutes: 7
+        timeout-minutes: 10
         continue-on-error: true
 
       - name: Build rvwap page
         run: python build_rvwap.py
-        timeout-minutes: 8
+        timeout-minutes: 14
         continue-on-error: true
 
       - name: Build maconv page
         run: python build_maconv.py
-        timeout-minutes: 8
+        timeout-minutes: 12
         continue-on-error: true
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
       - name: Build flows page
         run: python build_flows.py
@@ -82,11 +91,8 @@ jobs:
           github.event_name == 'workflow_dispatch' ||
           github.event_name == 'push'
         run: python build_setup.py
-        timeout-minutes: 10
+        timeout-minutes: 14
         continue-on-error: true
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
       # Pages는 site/ 폴더를 통째로 교체한다. 셋업을 스킵한 실행에서는
       # setup.html이 없어 기존 페이지가 사라지므로, 배포된 사본을 복원한다.
